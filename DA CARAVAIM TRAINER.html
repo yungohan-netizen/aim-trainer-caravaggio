@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low Poly Aim Trainer - V14 (RGB Targets)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #050505; 
+            font-family: 'Orbitron', sans-serif; 
+            user-select: none;
+        }
+
+        /* --- HUD --- */
+        .hud-container {
+            position: absolute;
+            pointer-events: none;
+            z-index: 10;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.8);
+        }
+        .hud-label {
+            font-size: 16px;
+            color: #666;
+            letter-spacing: 2px;
+            margin-bottom: -5px;
+        }
+        .hud-value {
+            font-size: 48px; 
+            font-weight: 800;
+            color: #fff;
+            transition: all 0.2s;
+        }
+        .highlight { 
+            color: #00ffff; 
+            text-shadow: 0 0 15px rgba(0, 255, 255, 0.4); 
+        } 
+
+        #hud-left { top: 30px; left: 40px; }
+        #hud-right { top: 30px; right: 40px; text-align: right; }
+        #hud-center { 
+            top: 20px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            text-align: center; 
+        }
+
+        #timeDisplay { font-size: 40px; font-weight: 800; color: #fff; transition: color 0.3s; }
+        
+        #livesBox {
+            margin-top: 5px;
+            font-size: 28px;
+            color: #ff3333;
+            text-shadow: 0 0 10px rgba(255, 51, 51, 0.6);
+            letter-spacing: 5px;
+            max-width: 400px; 
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .heart.empty { color: #444; text-shadow: none; }
+
+        @keyframes levelUpPulse {
+            0% { transform: scale(1); color: #00ffff; text-shadow: 0 0 15px rgba(0, 255, 255, 0.4); }
+            50% { transform: scale(1.4); color: #fff; text-shadow: 0 0 30px rgba(255, 255, 255, 1); }
+            100% { transform: scale(1); color: #00ffff; text-shadow: 0 0 15px rgba(0, 255, 255, 0.4); }
+        }
+        .level-up-anim {
+            animation: levelUpPulse 0.8s ease-out;
+        }
+
+        /* --- FEEDBACK VISUEL --- */
+        #damageOverlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            box-shadow: inset 0 0 150px rgba(255, 0, 0, 0); 
+            pointer-events: none;
+            z-index: 5;
+            transition: box-shadow 0.3s ease-out;
+        }
+        #levelUpOverlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            box-shadow: inset 0 0 150px rgba(0, 255, 255, 0); 
+            pointer-events: none;
+            z-index: 4;
+            transition: box-shadow 0.5s ease-out;
+        }
+
+        /* --- UI --- */
+        #crosshair { 
+            position: absolute; 
+            top: 50%; left: 50%; 
+            width: 6px; height: 6px; 
+            background: rgba(0, 255, 255, 0.8); 
+            border-radius: 50%;
+            transform: translate(-50%, -50%); 
+            pointer-events: none; 
+            transition: background 0.05s, transform 0.05s;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+            z-index: 10;
+        }
+        .hit { 
+            background: #fff !important; 
+            transform: translate(-50%, -50%) scale(2) !important;
+        }
+
+        #overlay { 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 100vw; height: 100vh; 
+            background: rgba(5, 5, 5, 0.95);
+            display: flex; 
+            align-items: center; justify-content: center; 
+            flex-direction: column;
+            color: #fff; 
+            font-size: 32px; 
+            cursor: pointer; 
+            text-align: center;
+            z-index: 100;
+        }
+        #overlay h1 {
+            font-size: 64px;
+            margin: 0 0 10px 0;
+            color: #00ffff;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+            font-weight: 800;
+        }
+        #overlay p { margin: 0 0 30px 0; font-size: 20px; color: #666; font-family: sans-serif;}
+    </style>
+</head>
+<body>
+    
+    <div id="damageOverlay"></div>
+    <div id="levelUpOverlay"></div>
+
+    <div id="hud-left" class="hud-container">
+        <div class="hud-label">SCORE</div>
+        <div id="score" class="hud-value">0</div>
+    </div>
+
+    <div id="hud-center" class="hud-container">
+        <div id="timeDisplay">15.0</div>
+        <div id="livesBox"></div>
+    </div>
+
+    <div id="hud-right" class="hud-container">
+        <div class="hud-label">LEVEL</div>
+        <div id="levelDisplay" class="hud-value highlight">1</div>
+    </div>
+
+    <div id="crosshair"></div>
+    
+    <div id="overlay">
+        <h1 id="mainMessage">AIM TRAINER</h1>
+        <p id="subMessage">Click anywhere to start</p>
+    </div>
+
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.154.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+        let camera, scene, renderer, controls, clock;
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2(0, 0); 
+
+        let targets = [];
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let levelTimer = 15.0; 
+        let isPlaying = false;
+        let state = 'START'; 
+
+        let weaponContainer, muzzleFlash, slideMesh;
+
+        // Constantes des limites d'apparition/rebond des cibles
+        const BOUNDS = {
+            minX: -8, maxX: 8,
+            minY: 1.5, maxY: 6.5
+        };
+
+        const scoreEl = document.getElementById('score');
+        const levelEl = document.getElementById('levelDisplay');
+        const timeEl = document.getElementById('timeDisplay');
+        const livesBox = document.getElementById('livesBox');
+        const damageOverlay = document.getElementById('damageOverlay');
+        const levelUpOverlay = document.getElementById('levelUpOverlay');
+        
+        const overlay = document.getElementById('overlay');
+        const mainMessage = document.getElementById('mainMessage');
+        const subMessage = document.getElementById('subMessage');
+        const crosshair = document.getElementById('crosshair');
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        init();
+        animate();
+
+        function updateLivesDisplay() {
+            let html = '';
+            let displayCount = Math.max(3, lives); 
+            for(let i = 0; i < displayCount; i++) {
+                if(i < lives) html += '<span class="heart">♥</span>';
+                else html += '<span class="heart empty">♡</span>';
+            }
+            livesBox.innerHTML = html;
+        }
+
+        function triggerDamageFlash() {
+            damageOverlay.style.transition = 'none';
+            damageOverlay.style.boxShadow = 'inset 0 0 150px rgba(255, 0, 0, 0.8)';
+            setTimeout(() => {
+                damageOverlay.style.transition = 'box-shadow 0.4s ease-out';
+                damageOverlay.style.boxShadow = 'inset 0 0 150px rgba(255, 0, 0, 0)';
+            }, 50);
+        }
+
+        function triggerLevelUpFlash() {
+            levelUpOverlay.style.transition = 'none';
+            levelUpOverlay.style.boxShadow = 'inset 0 0 150px rgba(0, 255, 255, 0.6)';
+            setTimeout(() => {
+                levelUpOverlay.style.transition = 'box-shadow 0.6s ease-out';
+                levelUpOverlay.style.boxShadow = 'inset 0 0 150px rgba(0, 255, 255, 0)';
+            }, 50);
+        }
+
+        function init() {
+            clock = new THREE.Clock();
+            scene = new THREE.Scene();
+            
+            const fogColor = new THREE.Color(0x050505);
+            scene.background = fogColor;
+            scene.fog = new THREE.FogExp2(fogColor, 0.025);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.y = 1.7; 
+
+            buildWeapon();
+            buildLandscape();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true }); 
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio); 
+            document.body.appendChild(renderer.domElement);
+
+            controls = new PointerLockControls(camera, document.body);
+
+            overlay.addEventListener('click', function () {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch((err) => {
+                        console.log(`Erreur lors du passage en plein écran : ${err.message}`);
+                    });
+                }
+
+                if (state === 'GAME_OVER' || state === 'START') {
+                    resetGame();
+                }
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', function () {
+                overlay.style.display = 'none';
+                isPlaying = true;
+                state = 'PLAYING';
+            });
+
+            controls.addEventListener('unlock', function () {
+                isPlaying = false;
+                if (state === 'PLAYING') {
+                    overlay.style.display = 'flex';
+                    mainMessage.innerText = 'PAUSED';
+                    mainMessage.style.color = '#fff';
+                    subMessage.innerText = 'Click to Resume';
+                }
+            });
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.15); 
+            scene.add(ambientLight);
+            
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            dirLight.position.set(-10, 20, -10);
+            scene.add(dirLight);
+
+            spawnTarget();
+            updateLivesDisplay();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousedown', onMouseClick);
+        }
+
+        function buildLandscape() {
+            const geo = new THREE.PlaneGeometry(300, 300, 60, 60);
+            geo.rotateX(-Math.PI / 2);
+
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                let x = pos.getX(i);
+                let z = pos.getZ(i);
+                let dist = Math.sqrt(x*x + z*z);
+                
+                if (dist > 30) {
+                    let height = (dist - 30) * 0.4 + (Math.random() * 15);
+                    pos.setY(i, height);
+                }
+            }
+            geo.computeVertexNormals(); 
+
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: 0x111111, 
+                flatShading: true,
+                roughness: 1.0,
+                metalness: 0.0
+            });
+            const landscape = new THREE.Mesh(geo, mat);
+            scene.add(landscape);
+        }
+
+        function buildWeapon() {
+            weaponContainer = new THREE.Group();
+            
+            const slideMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5, metalness: 0.5 });
+            const frameMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
+            const handMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 1 }); 
+
+            const slideGeo = new THREE.BoxGeometry(0.025, 0.022, 0.18);
+            slideMesh = new THREE.Mesh(slideGeo, slideMat);
+            slideMesh.position.set(0.1, -0.1, -0.25); 
+            weaponContainer.add(slideMesh);
+
+            const rearSightGeo = new THREE.BoxGeometry(0.025, 0.005, 0.01);
+            const rearSight = new THREE.Mesh(rearSightGeo, frameMat);
+            rearSight.position.set(0, 0.012, 0.08);
+            slideMesh.add(rearSight);
+
+            const frontSightGeo = new THREE.BoxGeometry(0.006, 0.004, 0.015);
+            const frontSight = new THREE.Mesh(frontSightGeo, frameMat);
+            frontSight.position.set(0, 0.012, -0.08);
+            slideMesh.add(frontSight);
+
+            const frameGeo = new THREE.BoxGeometry(0.025, 0.015, 0.12);
+            const frame = new THREE.Mesh(frameGeo, frameMat);
+            frame.position.set(0.1, -0.118, -0.22);
+            weaponContainer.add(frame);
+
+            const gripGeo = new THREE.BoxGeometry(0.023, 0.08, 0.045);
+            const grip = new THREE.Mesh(gripGeo, frameMat);
+            grip.position.set(0.1, -0.16, -0.19);
+            grip.rotation.x = -0.25; 
+            weaponContainer.add(grip);
+
+            const handGeo = new THREE.BoxGeometry(0.05, 0.07, 0.07);
+            const hand = new THREE.Mesh(handGeo, handMat);
+            hand.position.set(0.1, -0.18, -0.18);
+            weaponContainer.add(hand);
+
+            const flashGeo = new THREE.BoxGeometry(0.04, 0.04, 0.04);
+            const flashMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+            muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
+            muzzleFlash.position.set(0.1, -0.1, -0.36); 
+            muzzleFlash.visible = false;
+            weaponContainer.add(muzzleFlash);
+
+            camera.add(weaponContainer);
+            scene.add(camera); 
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            if (type === 'hit') {
+                osc.type = 'sine'; 
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.05);
+                gainNode.gain.setValueAtTime(0.03, audioCtx.currentTime); 
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.05);
+            } else if (type === 'error') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime); 
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.25);
+            } else if (type === 'fire') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.02, audioCtx.currentTime); 
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.04);
+            } else if (type === 'levelup') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+                osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime); 
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.4);
+            }
+        }
+
+        function spawnTarget() {
+            const geo = new THREE.IcosahedronGeometry(0.8, 0); 
+            
+            // --- NOUVEAU : COULEUR ALÉATOIRE ÉCLATANTE ---
+            // Génère une couleur aléatoire avec saturation au max et luminosité à 50% (couleurs "néon")
+            const randomColor = new THREE.Color().setHSL(Math.random(), 1.0, 0.5);
+
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: randomColor, 
+                roughness: 0.1, 
+                metalness: 0.1,
+                emissive: randomColor,
+                emissiveIntensity: 0.6 // Fait briller la couleur dans le noir
+            }); 
+            const target = new THREE.Mesh(geo, mat);
+
+            target.position.x = BOUNDS.minX + Math.random() * (BOUNDS.maxX - BOUNDS.minX);
+            target.position.y = BOUNDS.minY + Math.random() * (BOUNDS.maxY - BOUNDS.minY);    
+            target.position.z = -18;                         
+            
+            const speed = 0.02 + (level * 0.008); 
+            const angle = Math.random() * Math.PI * 2; 
+            
+            target.userData = { 
+                shrinkRate: 0.0015 + (level * 0.0005), 
+                velocity: new THREE.Vector3(Math.cos(angle) * speed, Math.sin(angle) * speed, 0)
+            }; 
+
+            scene.add(target);
+            targets.push(target);
+        }
+
+        function onMouseClick() {
+            if (!isPlaying || state !== 'PLAYING') return;
+
+            playSound('fire');
+            
+            muzzleFlash.visible = true;
+            muzzleFlash.rotation.set(Math.random(), Math.random(), Math.random());
+            
+            slideMesh.position.z = -0.22; 
+            weaponContainer.position.y = 0.01; 
+
+            setTimeout(() => {
+                muzzleFlash.visible = false;
+                slideMesh.position.z = -0.25; 
+                weaponContainer.position.y = 0;
+            }, 40);
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(targets);
+
+            if (intersects.length > 0) {
+                const hitTarget = intersects[0].object;
+                scene.remove(hitTarget);
+                targets = targets.filter(t => t !== hitTarget);
+                
+                playSound('hit');
+                crosshair.classList.add('hit');
+                setTimeout(() => crosshair.classList.remove('hit'), 50);
+                
+                score += (10 * level); 
+                scoreEl.innerText = score;
+                spawnTarget();
+            } else {
+                playSound('error');
+                triggerDamageFlash();
+                lives--;
+                updateLivesDisplay();
+
+                if (lives <= 0) {
+                    handleGameOver();
+                }
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function handleGameOver() {
+            isPlaying = false;
+            state = 'GAME_OVER';
+            document.exitPointerLock();
+            overlay.style.display = 'flex';
+            mainMessage.innerText = 'SYS_FAILURE';
+            mainMessage.style.color = '#ff3333';
+            subMessage.innerText = `Final Score: ${score} | Reached Level: ${level}\nClick to Restart`;
+        }
+
+        function triggerLevelUpAnimation() {
+            playSound('levelup');
+            triggerLevelUpFlash(); 
+            
+            levelEl.classList.remove('level-up-anim');
+            void levelEl.offsetWidth; 
+            levelEl.classList.add('level-up-anim');
+            
+            if (level === 10) {
+                timeEl.style.color = '#00ffff';
+            }
+        }
+
+        function resetGame() {
+            score = 0;
+            level = 1;
+            lives = 3;
+            levelTimer = 15.0; 
+            
+            scoreEl.innerText = score;
+            levelEl.innerText = level;
+            timeEl.style.color = '#fff';
+            updateLivesDisplay();
+            
+            targets.forEach(t => scene.remove(t));
+            targets = [];
+            spawnTarget();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (isPlaying && state === 'PLAYING') {
+                
+                if (level < 10) {
+                    levelTimer -= delta;
+                    if (levelTimer <= 0) {
+                        level++;
+                        lives++; 
+                        updateLivesDisplay();
+                        
+                        levelTimer = 15.0; 
+                        levelEl.innerText = level;
+                        triggerLevelUpAnimation();
+                    } else {
+                        timeEl.innerText = levelTimer.toFixed(1);
+                    }
+                } else {
+                    timeEl.innerText = "ENDLESS";
+                }
+
+                for (let i = targets.length - 1; i >= 0; i--) {
+                    let t = targets[i];
+                    
+                    t.position.add(t.userData.velocity);
+
+                    if (t.position.x > BOUNDS.maxX || t.position.x < BOUNDS.minX) {
+                        t.userData.velocity.x *= -1;
+                        t.position.x = Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, t.position.x));
+                    }
+                    if (t.position.y > BOUNDS.maxY || t.position.y < BOUNDS.minY) {
+                        t.userData.velocity.y *= -1;
+                        t.position.y = Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, t.position.y));
+                    }
+                    
+                    t.rotation.x += 0.01;
+                    t.rotation.y += 0.01;
+
+                    t.scale.x -= t.userData.shrinkRate;
+                    t.scale.y -= t.userData.shrinkRate;
+                    t.scale.z -= t.userData.shrinkRate;
+
+                    if (t.scale.x <= 0) {
+                        scene.remove(t);
+                        targets.splice(i, 1);
+                        
+                        playSound('error');
+                        triggerDamageFlash();
+                        
+                        lives--;
+                        updateLivesDisplay();
+
+                        if (lives <= 0) {
+                            handleGameOver();
+                        } else {
+                            spawnTarget();
+                        }
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
