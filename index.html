@@ -604,6 +604,15 @@ function playSound(type, extra = 0) {
 
 function pickType() {
     const r = Math.random();
+    const bombCount = targets.filter(t => t.userData.type === 'bomb').length;
+    const maxBombs  = Math.max(0, getMaxTargets() - 1); // always leave 1 non-bomb slot
+
+    // Never fill all slots with bombs
+    if (bombCount >= maxBombs) {
+        if (level >= 2 && r < 0.07) return 'heart';
+        return r < 0.35 ? 'gold' : 'normal';
+    }
+
     if (level >= 2 && r < 0.05)  return 'heart';
     if (level >= 3 && r < 0.20)  return 'bomb';
     if (r < 0.28)                return 'gold';
