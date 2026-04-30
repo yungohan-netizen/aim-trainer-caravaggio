@@ -35,15 +35,7 @@
         .heart.empty { color: #1e1e1e; text-shadow: none; }
         #levelDisplay { color: #00ffff; text-shadow: 0 0 18px rgba(0,255,255,0.5); }
 
-        /* ─── HIGHSCORE BAR ─── */
-        #hud-hs {
-            position: absolute; top: 28px; right: 36px;
-            pointer-events: none; z-index: 10; text-align: right;
-        }
-        #hs-label { font-size: 10px; color: #2a2a2a; letter-spacing: 3px; margin-bottom: -2px; }
-        #hs-value  { font-size: 20px; font-weight: 800; color: #333; }
-
-        /* ─── LEVEL TIMER BAR ─── */
+/* ─── LEVEL TIMER BAR ─── */
         #timer-bar-wrap {
             width: 120px; height: 3px; background: #111; border-radius: 2px;
             margin: 5px auto 0; overflow: hidden;
@@ -239,11 +231,7 @@
     <div id="levelDisplay" class="hud-value">1</div>
 </div>
 
-<!-- Highscore stacked below level on right -->
-<div id="hud-hs">
-    <div id="hs-label">RECORD</div>
-    <div id="hs-value">0</div>
-</div>
+
 
 <div id="hud-combo" class="hud-container">
     <div class="hud-label">COMBO</div>
@@ -325,8 +313,6 @@ const comboEl       = document.getElementById('comboValue');
 const bombWarning   = document.getElementById('bomb-warning');
 const quickFlash    = document.getElementById('quick-flash');
 const hsBadge       = document.getElementById('hs-badge');
-const hsValueEl     = document.getElementById('hs-value');
-const hsLabelEl     = document.getElementById('hs-label');
 const timerBarFill  = document.getElementById('timer-bar-fill');
 const legendEl      = document.getElementById('legend');
 
@@ -379,10 +365,6 @@ function updateCombo() {
         comboEl.style.fontSize = '44px';
         comboEl.classList.remove('active');
     }
-}
-
-function updateHsDisplay() {
-    hsValueEl.innerText = highScore.toLocaleString();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -808,7 +790,7 @@ function gameOver() {
         <div class="stat-row"><span>TIRS</span><b>${shotsHit} / ${shotsFired}</b></div>
     `;
     clickHint.innerText = 'CLIQUER POUR REJOUER';
-    updateHsDisplay();
+    
 }
 
 function levelUpAnim() {
@@ -830,7 +812,7 @@ function resetGame() {
     activeParticles.forEach(p => p.frags.forEach(f => scene.remove(f.mesh))); activeParticles = [];
     bombLabels.forEach(b => b.el.remove()); bombLabels = [];
 
-    updateLives(); updateCombo(); updateHsDisplay();
+    updateLives(); updateCombo(); 
     statsPanel.style.display = 'none'; hsBadge.style.display = 'none';
     mainMsg.style.textShadow = '';
     spawnTarget();
@@ -888,7 +870,7 @@ function init() {
     const dir = new THREE.DirectionalLight(0xffffff, 0.3);
     dir.position.set(-10, 20, -10); scene.add(dir);
 
-    updateLives(); updateCombo(); updateHsDisplay();
+    updateLives(); updateCombo(); 
 
     window.addEventListener('resize', () => {
         camera.aspect = innerWidth / innerHeight;
