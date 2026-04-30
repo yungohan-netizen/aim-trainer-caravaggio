@@ -1306,7 +1306,7 @@ function animate() {
                     ud.strafeDir *= -1;
                     ud.tvx = 0; // brief stop before reversing (counter-strafe freeze)
                     ud.jukeCooldown = 0.4 + Math.random() * 0.3;
-                    ud.nextBehaviourIn = 0.08 + Math.random() * 0.15; // very short — just the freeze
+                    ud.nextBehaviourIn = 0.08 + Math.random() * 0.0015; // very short — just the freeze
                 } else if (r < 0.55) {
                     // Normal strafe — horizontal dominant, tiny vertical drift
                     ud.strafeDir = Math.random() < 0.5 ? -1 : 1;
