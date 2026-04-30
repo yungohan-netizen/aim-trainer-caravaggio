@@ -270,7 +270,35 @@
         .hs-row.rank-1 .hs-meta { color: #444; }
         .hs-empty { text-align: center; color: #222; font-size: 12px; letter-spacing: 3px; padding: 12px 0; font-family: sans-serif; }
 
-        /* ─── GRADE in stats panel ─── */
+        /* ─── SENSITIVITY SLIDER ─── */
+        #sens-panel {
+            margin-bottom: 16px; text-align: center;
+        }
+        #sens-panel label {
+            font-size: 10px; color: #333; letter-spacing: 3px;
+            font-family: sans-serif; display: block; margin-bottom: 8px;
+        }
+        #sens-panel .sens-row {
+            display: flex; align-items: center; gap: 12px; justify-content: center;
+        }
+        #sens-slider {
+            -webkit-appearance: none; appearance: none;
+            width: 180px; height: 3px; border-radius: 2px;
+            background: #1a1a1a; outline: none; cursor: pointer;
+        }
+        #sens-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px;
+            border-radius: 50%; background: #00ffff;
+            box-shadow: 0 0 8px rgba(0,255,255,0.5); cursor: pointer;
+        }
+        #sens-slider::-moz-range-thumb {
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #00ffff; border: none; cursor: pointer;
+        }
+        #sens-value {
+            font-family: 'Orbitron', sans-serif; font-size: 13px;
+            font-weight: 800; color: #00ffff; min-width: 32px;
+        }
         .stat-grade {
             text-align: center; font-size: 48px; font-weight: 800;
             letter-spacing: 4px; margin: 4px 0 8px;
@@ -337,11 +365,18 @@
         <div id="hs-board-title">MEILLEURS SCORES</div>
         <div id="hs-board-list"><div class="hs-empty">AUCUN SCORE</div></div>
     </div>
-    <div id="legend" style="font-family:sans-serif;font-size:12px;color:#444;letter-spacing:2px;line-height:2.4;margin-bottom:18px;text-align:left;">
+    <div id="legend" style="font-family:sans-serif;font-size:12px;color:#444;letter-spacing:2px;line-height:2.4;margin-bottom:6px;text-align:left;">
         <div><span style="color:#888;font-family:Orbitron,sans-serif">NORMAL</span> &nbsp;— tirer, score +points</div>
         <div><span style="color:#ffcc00;font-family:Orbitron,sans-serif">OR</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— petite, rapide, ×3 score</div>
         <div><span style="color:#ff3333;font-family:Orbitron,sans-serif">BOMBE</span> &nbsp;— ne pas tirer, +pts si ignorée</div>
         <div><span style="color:#ff44aa;font-family:Orbitron,sans-serif">COEUR</span> &nbsp;— tirer, +1 vie</div>
+    </div>
+    <div id="sens-panel">
+        <label>SENSIBILITE</label>
+        <div class="sens-row">
+            <input type="range" id="sens-slider" min="1" max="20" step="1" value="8">
+            <span id="sens-value">8</span>
+        </div>
     </div>
     <div class="click-hint" id="clickHint">CLIQUER POUR COMMENCER</div>
 </div>
@@ -373,8 +408,22 @@ const BOUNDS = { minX: -8, maxX: 8, minY: 1.5, maxY: 6.5 };
 const QUICK_KILL_WINDOW = 2.2; // seconds
 
 // ─── RECOIL ──────────────────────────────────────────────────────────────────
-let recoilAmount = 0;   // weapon visual pitch offset
-let bobTime = 0;        // weapon idle bob accumulator
+let recoilAmount = 0;
+let bobTime = 0;
+
+// ─── AIM STATE ───────────────────────────────────────────────────────────────
+// Yaw/pitch as separate floats so we control them precisely
+let camYaw   = 0;  // horizontal look (radians)
+let camPitch = 0;  // vertical look (radians), clamped
+
+// Mouse inertia — residual velocity that decays after mouse stops
+let aimVelX = 0;
+let aimVelY = 0;
+
+// Sensitivity: units = radians per pixel * scale factor
+// Slider 1-20 maps to 0.0003 – 0.006 rad/px
+let sensitivity = parseFloat(localStorage.getItem('aimtrainer_sens') || '8');
+function sensFactor(s) { return 0.0003 + (s - 1) / 19 * 0.0057; }
 
 // ─── WEAPON ──────────────────────────────────────────────────────────────────
 let weaponGroup, muzzleFlash, slideMesh;
@@ -403,6 +452,8 @@ const lowHealthEl   = document.getElementById('low-health-overlay');
 const newRecordEl   = document.getElementById('newrecord-banner');
 const killsEl       = document.getElementById('killsDisplay');
 const hsBoardList   = document.getElementById('hs-board-list');
+const sensSlider    = document.getElementById('sens-slider');
+const sensValueEl   = document.getElementById('sens-value');
 
 // Reusable vec3 to avoid allocation in hot loops
 const _tmpVec = new THREE.Vector3();
@@ -807,10 +858,39 @@ function spawnTarget() {
     mesh.userData = {
         type, radius,
         shrinkRate: (0.0008 + level * 0.00025) * shrinkMult,
-        velocity: new THREE.Vector3(Math.cos(angle) * speed, Math.sin(angle) * speed, 0),
         birthTime: clock.elapsedTime,
         baseColor: color.clone(),
         spawnScale: 0.0,
+
+        // ── Realistic FPS movement state ──────────────────────────────────────
+        // Current actual velocity (accelerated toward target velocity)
+        vx: 0, vy: 0,
+        // Target velocity the "player" wants to reach
+        tvx: 0, tvy: 0,
+        // Base max speed for this target
+        maxSpeed: (0.022 + level * 0.007) * speedMult,
+        // Time until next behaviour change (strafe direction, juke...)
+        nextBehaviourIn: 0, // Les cibles choisiront une direction instantanément
+
+        // ── Realistic FPS movement state ──────────────────────────────────────
+        // Current actual velocity (accelerated toward target velocity)
+        vx: 0, vy: 0,
+        // Target velocity the "player" wants to reach
+        tvx: 0, tvy: 0,
+        // Base max speed for this target
+        maxSpeed: (0.022 + level * 0.007) * speedMult,
+        // Time until next behaviour change (strafe direction, juke...)
+        nextBehaviourIn: 0.3 + Math.random() * 0.8,
+        // Current behaviour: 'strafe-left','strafe-right','juke','crouch-strafe'
+        behaviour: 'strafe-right',
+        // Strafing: dominant axis direction (-1 or 1)
+        strafeDir: Math.random() < 0.5 ? -1 : 1,
+        // Vertical bias (small, players barely move vertically)
+        vertBias: (Math.random() - 0.5) * 0.3,
+        // Acceleration rate (how quickly they reach max speed — lower = slower start)
+        accel: 0.3 + Math.random() * 0.08,
+        // Juke cooldown prevents back-to-back jukes
+        jukeCooldown: 0,
     };
 
     scene.add(mesh);
@@ -991,6 +1071,7 @@ function init() {
 
     camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
     camera.position.y = 1.7;
+    camera.rotation.order = 'YXZ'; // standard FPS order: yaw first, then pitch
 
     buildWeapon();
     buildEnvironment();
@@ -1012,6 +1093,11 @@ function init() {
     controls.addEventListener('lock', () => {
         overlay.style.display = 'none';
         isPlaying = true; state = 'PLAYING';
+        // Sync our yaw/pitch from current camera rotation so no jump
+        camYaw   = camera.rotation.y;
+        camPitch = camera.rotation.x;
+        aimVelX  = 0;
+        aimVelY  = 0;
     });
 
     controls.addEventListener('unlock', () => {
@@ -1033,6 +1119,7 @@ function init() {
 
     updateLives(); updateCombo();
     renderLeaderboard(loadLeaderboard());
+    initSensSlider();
 
     window.addEventListener('resize', () => {
         camera.aspect = innerWidth / innerHeight;
@@ -1043,23 +1130,43 @@ function init() {
     window.addEventListener('mousemove', onMouseMove);
 }
 
-function onMouseMove() {
-    if (!isPlaying) return;
+function initSensSlider() {
+    sensSlider.value = sensitivity;
+    sensValueEl.innerText = sensitivity;
+    sensSlider.addEventListener('input', () => {
+        sensitivity = parseFloat(sensSlider.value);
+        sensValueEl.innerText = sensitivity;
+        localStorage.setItem('aimtrainer_sens', sensitivity);
+    });
+    // Prevent slider click from triggering overlay click (which would lock pointer)
+    sensSlider.addEventListener('mousedown', e => e.stopPropagation());
+}
+
+function onMouseMove(e) {
+    // ── FPS camera rotation ──────────────────────────────────────────────────
+    if (isPlaying && document.pointerLockElement) {
+        const sf = sensFactor(sensitivity);
+        // Add raw delta to inertia velocity (capped to prevent huge jumps)
+        const dx = Math.max(-80, Math.min(80, e.movementX));
+        const dy = Math.max(-80, Math.min(80, e.movementY));
+        aimVelX += dx * sf;
+        aimVelY += dy * sf;
+    }
+
+    // ── Adaptive crosshair color ─────────────────────────────────────────────
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(targets);
+    const lines = crosshair.querySelectorAll('line');
+    const dot   = crosshair.querySelector('circle');
     if (hits.length > 0) {
-        const t = hits[0].object.userData.type;
-        const lines = crosshair.querySelectorAll('line');
-        const dot   = crosshair.querySelector('circle');
-        const col   = t === 'bomb'  ? 'rgba(255,60,60,0.95)'
-                    : t === 'heart' ? 'rgba(255,80,180,0.95)'
-                    : t === 'gold'  ? 'rgba(255,210,0,0.95)'
-                    : 'rgba(0,255,255,0.9)';
+        const tp = hits[0].object.userData.type;
+        const col = tp === 'bomb'  ? 'rgba(255,60,60,0.95)'
+                  : tp === 'heart' ? 'rgba(255,80,180,0.95)'
+                  : tp === 'gold'  ? 'rgba(255,210,0,0.95)'
+                  : 'rgba(0,255,255,0.9)';
         lines.forEach(l => l.setAttribute('stroke', col));
         dot.setAttribute('fill', col);
     } else {
-        const lines = crosshair.querySelectorAll('line');
-        const dot   = crosshair.querySelector('circle');
         lines.forEach(l => l.setAttribute('stroke', 'rgba(0,255,255,0.9)'));
         dot.setAttribute('fill', 'rgba(0,255,255,0.95)');
     }
@@ -1182,21 +1289,63 @@ function animate() {
 
             // Spawn grow-in
             if (ud.spawnScale < 1) {
-                ud.spawnScale = Math.min(ud.spawnScale + delta * 5, 1);
+                ud.spawnScale = Math.min(ud.spawnScale + delta * 10, 1);
                 t.scale.setScalar(ud.spawnScale);
                 continue; // don't shrink while spawning
             }
 
-            // Movement
-            t.position.add(ud.velocity);
-            if (t.position.x > BOUNDS.maxX || t.position.x < BOUNDS.minX) {
-                ud.velocity.x *= -1;
-                t.position.x = Math.max(BOUNDS.minX, Math.min(BOUNDS.maxX, t.position.x));
+            // Movement — realistic FPS player behaviour
+            ud.jukeCooldown = Math.max(0, ud.jukeCooldown - delta);
+            ud.nextBehaviourIn -= delta;
+
+            if (ud.nextBehaviourIn <= 0) {
+                const r = Math.random();
+
+                if (ud.jukeCooldown <= 0 && r < 0.25) {
+                    // Counter-strafe: snap to near-zero then accelerate opposite
+                    ud.strafeDir *= -1;
+                    ud.tvx = 0; // brief stop before reversing (counter-strafe freeze)
+                    ud.jukeCooldown = 0.4 + Math.random() * 0.3;
+                    ud.nextBehaviourIn = 0.08 + Math.random() * 0.15; // very short — just the freeze
+                } else if (r < 0.55) {
+                    // Normal strafe — horizontal dominant, tiny vertical drift
+                    ud.strafeDir = Math.random() < 0.5 ? -1 : 1;
+                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.7 + Math.random() * 0.3);
+                    ud.tvy = ud.vertBias * ud.maxSpeed * 0.25;
+                    ud.nextBehaviourIn = 0.4 + Math.random() * 0.9;
+                } else if (r < 0.75) {
+                    // Diagonal push — strafe + slight vertical
+                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.5 + Math.random() * 0.4);
+                    ud.tvy = (Math.random() - 0.5) * ud.maxSpeed * 0.4;
+                    ud.nextBehaviourIn = 0.3 + Math.random() * 0.6;
+                } else {
+                    // Brief stop / crouch moment — player decelerating
+                    ud.tvx = 0;
+                    ud.tvy = 0;
+                    ud.nextBehaviourIn = 0.12 + Math.random() * 0.25;
+                }
             }
-            if (t.position.y > BOUNDS.maxY || t.position.y < BOUNDS.minY) {
-                ud.velocity.y *= -1;
-                t.position.y = Math.max(BOUNDS.minY, Math.min(BOUNDS.maxY, t.position.y));
+
+            // Accelerate current velocity toward target (simulates player acceleration curve)
+            ud.vx += (ud.tvx - ud.vx) * ud.accel;
+            ud.vy += (ud.tvy - ud.vy) * ud.accel;
+
+            t.position.x += ud.vx;
+            t.position.y += ud.vy;
+
+            // Bounce off walls and flip strafe direction (player hits a wall = turns around)
+            if (t.position.x > BOUNDS.maxX) {
+                t.position.x = BOUNDS.maxX;
+                ud.tvx = -Math.abs(ud.tvx);
+                ud.strafeDir = -1;
             }
+            if (t.position.x < BOUNDS.minX) {
+                t.position.x = BOUNDS.minX;
+                ud.tvx = Math.abs(ud.tvx);
+                ud.strafeDir = 1;
+            }
+            if (t.position.y > BOUNDS.maxY) { t.position.y = BOUNDS.maxY; ud.tvy = -Math.abs(ud.tvy); }
+            if (t.position.y < BOUNDS.minY) { t.position.y = BOUNDS.minY; ud.tvy = Math.abs(ud.tvy); }
 
             // Rotation
             const rs = ud.type === 'bomb' ? 0.04 : 0.013;
@@ -1254,8 +1403,23 @@ function animate() {
         });
     }
 
-    // ── Weapon bob (idle) ──
+    // ── FPS camera: direct 1:1 + micro-sway ──
     if (isPlaying) {
+        // Apply accumulated mouse delta directly, no inertia
+        camYaw   -= aimVelX;
+        camPitch -= aimVelY;
+        aimVelX  = 0;
+        aimVelY  = 0;
+
+        // Clamp pitch ±70°
+        camPitch = Math.max(-1.22, Math.min(1.22, camPitch));
+
+        // Micro-sway: very subtle hand tremor
+        const swayAmp = 0.0006;
+        camera.rotation.y = camYaw  + Math.sin(elapsed * 1.1) * Math.cos(elapsed * 0.7)  * swayAmp;
+        camera.rotation.x = camPitch + Math.sin(elapsed * 0.8) * Math.cos(elapsed * 1.3) * swayAmp * 0.6;
+
+        // Weapon bob
         bobTime += delta;
         weaponGroup.position.y = Math.sin(bobTime * 1.8) * 0.003;
         weaponGroup.position.x = Math.sin(bobTime * 0.9) * 0.0015;
