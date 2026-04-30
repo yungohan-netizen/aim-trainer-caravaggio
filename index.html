@@ -204,15 +204,89 @@
             40% { opacity: 1; transform: translate(-50%,-50%) scale(1.05); }
             100%{ opacity: 0; transform: translate(-50%,-60%) scale(1); }
         }
+
+        /* ─── LOW HEALTH VIGNETTE ─── */
+        #low-health-overlay {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none; z-index: 6;
+            box-shadow: inset 0 0 0 rgba(255,0,0,0);
+        }
+        @keyframes heartbeat {
+            0%,100% { box-shadow: inset 0 0 120px rgba(255,0,0,0.0); }
+            50%      { box-shadow: inset 0 0 120px rgba(255,0,0,0.55); }
+        }
+        #low-health-overlay.pulse-1 { animation: heartbeat 1.4s ease-in-out infinite; }
+        #low-health-overlay.pulse-2 { animation: heartbeat 0.7s ease-in-out infinite; }
+
+        /* ─── MID-GAME NEW RECORD ─── */
+        #newrecord-banner {
+            position: absolute; top: 20%; left: 50%;
+            transform: translate(-50%,-50%); pointer-events: none; z-index: 17;
+            font-size: 18px; font-weight: 800; letter-spacing: 5px;
+            color: #ffff00; text-shadow: 0 0 20px rgba(255,255,0,0.9);
+            opacity: 0;
+        }
+        @keyframes newRecordPop {
+            0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.7); }
+            15%  { opacity: 1; transform: translate(-50%,-50%) scale(1.08); }
+            70%  { opacity: 1; }
+            100% { opacity: 0; transform: translate(-50%,-55%); }
+        }
+
+        /* ─── KILLS HUD ─── */
+        #hud-kills {
+            position: absolute; bottom: 28px; right: 36px;
+            pointer-events: none; z-index: 10;
+            text-align: right;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.9);
+        }
+
+        /* ─── LEADERBOARD IN MENU ─── */
+        #hs-board {
+            min-width: 320px; margin-bottom: 20px;
+            font-family: sans-serif;
+        }
+        #hs-board-title {
+            font-size: 11px; letter-spacing: 4px; color: #333;
+            margin-bottom: 10px; text-align: center;
+        }
+        #hs-board-list {
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .hs-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 6px 14px; border-radius: 4px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid #181818;
+            font-size: 13px; color: #555;
+            transition: opacity 0.3s;
+        }
+        .hs-row.rank-1 { border-color: #2a2a00; background: rgba(255,220,0,0.06); color: #888; }
+        .hs-row .hs-rank { width: 22px; color: #2a2a2a; font-family: 'Orbitron', sans-serif; font-size: 11px; }
+        .hs-row.rank-1 .hs-rank { color: #aa8800; }
+        .hs-row .hs-score { font-family: 'Orbitron', sans-serif; font-weight: 800; color: #666; }
+        .hs-row.rank-1 .hs-score { color: #ffcc00; }
+        .hs-row .hs-meta { font-size: 11px; color: #2e2e2e; letter-spacing: 1px; }
+        .hs-row.rank-1 .hs-meta { color: #444; }
+        .hs-empty { text-align: center; color: #222; font-size: 12px; letter-spacing: 3px; padding: 12px 0; font-family: sans-serif; }
+
+        /* ─── GRADE in stats panel ─── */
+        .stat-grade {
+            text-align: center; font-size: 48px; font-weight: 800;
+            letter-spacing: 4px; margin: 4px 0 8px;
+            font-family: 'Orbitron', sans-serif;
+        }
     </style>
 </head>
 <body>
 
 <div id="damageOverlay"></div>
 <div id="levelUpOverlay"></div>
+<div id="low-health-overlay"></div>
 <div id="streak-banner"></div>
 <div id="level-up-banner"></div>
 <div id="quick-flash"></div>
+<div id="newrecord-banner">NEW RECORD</div>
 <div id="bomb-warning">NE PAS TIRER</div>
 
 <div id="hud-left" class="hud-container">
@@ -232,6 +306,11 @@
 </div>
 
 
+
+<div id="hud-kills" class="hud-container">
+    <div class="hud-label">KILLS</div>
+    <div id="killsDisplay" class="hud-value" style="font-size:32px;color:#888;">0</div>
+</div>
 
 <div id="hud-combo" class="hud-container">
     <div class="hud-label">COMBO</div>
@@ -254,6 +333,10 @@
     <p class="subtitle">V3 — ARCADE EDITION</p>
     <div id="hs-badge"></div>
     <div id="stats-panel"></div>
+    <div id="hs-board">
+        <div id="hs-board-title">MEILLEURS SCORES</div>
+        <div id="hs-board-list"><div class="hs-empty">AUCUN SCORE</div></div>
+    </div>
     <div id="legend" style="font-family:sans-serif;font-size:12px;color:#444;letter-spacing:2px;line-height:2.4;margin-bottom:18px;text-align:left;">
         <div><span style="color:#888;font-family:Orbitron,sans-serif">NORMAL</span> &nbsp;— tirer, score +points</div>
         <div><span style="color:#ffcc00;font-family:Orbitron,sans-serif">OR</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— petite, rapide, ×3 score</div>
@@ -279,10 +362,11 @@ const mouse = new THREE.Vector2(0, 0);
 let targets = [];
 let score = 0, lives = 5, level = 1, levelTimer = 15.0;
 let isPlaying = false, state = 'START';
-let combo = 0, maxCombo = 0, shotsFired = 0, shotsHit = 0;
+let combo = 0, maxCombo = 0, shotsFired = 0, shotsHit = 0, killCount = 0;
 let activeParticles = [], bombLabels = [];
 let bombWarningTimeout = null;
 let highScore = parseInt(localStorage.getItem('aimtrainer_hs') || '0');
+let recordNotified = false; // prevent repeated mid-game new record banners
 
 const MAX_LIVES = 8;
 const BOUNDS = { minX: -8, maxX: 8, minY: 1.5, maxY: 6.5 };
@@ -315,6 +399,10 @@ const quickFlash    = document.getElementById('quick-flash');
 const hsBadge       = document.getElementById('hs-badge');
 const timerBarFill  = document.getElementById('timer-bar-fill');
 const legendEl      = document.getElementById('legend');
+const lowHealthEl   = document.getElementById('low-health-overlay');
+const newRecordEl   = document.getElementById('newrecord-banner');
+const killsEl       = document.getElementById('killsDisplay');
+const hsBoardList   = document.getElementById('hs-board-list');
 
 // Reusable vec3 to avoid allocation in hot loops
 const _tmpVec = new THREE.Vector3();
@@ -481,8 +569,75 @@ function updateBombLabels() {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// PARTICLES
+// ─── LEADERBOARD ─────────────────────────────────────────────────────────────
+
+function loadLeaderboard() {
+    try { return JSON.parse(localStorage.getItem('aimtrainer_lb') || '[]'); }
+    catch { return []; }
+}
+
+function saveToLeaderboard(entry) {
+    let lb = loadLeaderboard();
+    lb.push(entry);
+    lb.sort((a, b) => b.score - a.score);
+    lb = lb.slice(0, 5);
+    localStorage.setItem('aimtrainer_lb', JSON.stringify(lb));
+    return lb;
+}
+
+function renderLeaderboard(lb) {
+    if (!lb || lb.length === 0) {
+        hsBoardList.innerHTML = '<div class="hs-empty">AUCUN SCORE</div>';
+        return;
+    }
+    hsBoardList.innerHTML = lb.map((e, i) => `
+        <div class="hs-row ${i === 0 ? 'rank-1' : ''}">
+            <span class="hs-rank">${i + 1}</span>
+            <span class="hs-score">${e.score.toLocaleString()}</span>
+            <span class="hs-meta">LV${e.level} &nbsp; ${e.acc}% &nbsp; ${e.grade}</span>
+        </div>
+    `).join('');
+}
+
+function getGrade(acc) {
+    if (acc >= 90) return { label: 'S', color: '#ffff00' };
+    if (acc >= 75) return { label: 'A', color: '#00ff88' };
+    if (acc >= 55) return { label: 'B', color: '#00ccff' };
+    if (acc >= 35) return { label: 'C', color: '#ff8800' };
+    return { label: 'D', color: '#ff3333' };
+}
+
+// ─── MID-GAME NEW RECORD ─────────────────────────────────────────────────────
+
+function checkMidGameRecord() {
+    if (!recordNotified && score > highScore && highScore > 0) {
+        recordNotified = true;
+        newRecordEl.style.animation = 'none';
+        void newRecordEl.offsetWidth;
+        newRecordEl.style.animation = 'newRecordPop 2.2s ease-out forwards';
+        playSound('newhs');
+    }
+}
+
+// ─── LOW HEALTH ──────────────────────────────────────────────────────────────
+
+function updateLowHealth() {
+    lowHealthEl.className = '';
+    if (lives === 1) lowHealthEl.classList.add('pulse-2');
+    else if (lives === 2) lowHealthEl.classList.add('pulse-1');
+}
+
+// ─── KILLS DISPLAY ───────────────────────────────────────────────────────────
+
+function addKill() {
+    killCount++;
+    killsEl.innerText = killCount;
+    killsEl.classList.remove('score-pop');
+    void killsEl.offsetWidth;
+    killsEl.classList.add('score-pop');
+}
+
+
 // ═════════════════════════════════════════════════════════════════════════════
 
 function spawnParticles(position, color, count = 10) {
@@ -704,20 +859,20 @@ function onShoot() {
             flashDamage(); screenShake(1.6);
             showPopup(hitPos, 'BOMBE  -1 VIE', '#ff3333');
             combo = 0; updateCombo();
-            lives = Math.max(0, lives - 1); updateLives();
+            lives = Math.max(0, lives - 1); updateLives(); updateLowHealth();
             if (lives <= 0) { gameOver(); return; }
 
         } else if (type === 'heart') {
             playSound('heart');
             combo++; if (combo > maxCombo) maxCombo = combo;
-            shotsHit++;
+            shotsHit++; addKill();
             showPopup(hitPos, '+1 VIE', '#ff44aa');
-            if (lives < MAX_LIVES) { lives++; updateLives(); }
+            if (lives < MAX_LIVES) { lives++; updateLives(); updateLowHealth(); }
             updateCombo(); checkStreak();
 
         } else {
             combo++; if (combo > maxCombo) maxCombo = combo;
-            shotsHit++; updateCombo(); checkStreak();
+            shotsHit++; addKill(); updateCombo(); checkStreak();
 
             const mult   = getComboMult();
             const bonus  = type === 'gold' ? 3 : 1;
@@ -733,6 +888,7 @@ function onShoot() {
             }
 
             addScore(pts);
+            checkMidGameRecord();
 
             const col = type === 'gold' ? '#ffcc00' : (mult > 1 ? `hsl(${45+combo*4},100%,65%)` : '#fff');
             const lbl = type === 'gold'
@@ -748,7 +904,7 @@ function onShoot() {
         crosshair.classList.add('miss');
         setTimeout(() => crosshair.classList.remove('miss'), 85);
         combo = 0; updateCombo();
-        lives = Math.max(0, lives - 1); updateLives();
+        lives = Math.max(0, lives - 1); updateLives(); updateLowHealth();
         if (lives <= 0) { gameOver(); return; }
     }
 }
@@ -761,15 +917,16 @@ function gameOver() {
     isPlaying = false; state = 'GAME_OVER';
     document.exitPointerLock();
     playSound('gameover');
+    lowHealthEl.className = '';
 
     const isNewHS = score > highScore;
-    if (isNewHS) {
-        highScore = score;
-        localStorage.setItem('aimtrainer_hs', highScore);
-        playSound('newhs');
-    }
+    if (isNewHS) { highScore = score; localStorage.setItem('aimtrainer_hs', highScore); }
 
-    const acc = shotsFired > 0 ? Math.round((shotsHit / shotsFired) * 100) : 0;
+    const acc   = shotsFired > 0 ? Math.round((shotsHit / shotsFired) * 100) : 0;
+    const grade = getGrade(acc);
+    const lb    = saveToLeaderboard({ score, level, acc, grade: grade.label });
+    renderLeaderboard(lb);
+
     const accColor = acc >= 70 ? '#00ff88' : acc >= 40 ? '#ffcc00' : '#ff4444';
 
     overlay.style.display = 'flex';
@@ -779,18 +936,19 @@ function gameOver() {
     if (legendEl) legendEl.style.display = 'none';
 
     hsBadge.style.display = isNewHS ? 'block' : 'none';
-    if (isNewHS) hsBadge.innerHTML = `NOUVEAU RECORD — <span>${highScore.toLocaleString()}</span>`;
+    if (isNewHS) { hsBadge.innerHTML = `NOUVEAU RECORD — <span>${highScore.toLocaleString()}</span>`; playSound('newhs'); }
 
     statsPanel.style.display = 'block';
     statsPanel.innerHTML = `
+        <div class="stat-grade" style="color:${grade.color}">${grade.label}</div>
         <div class="stat-row"><span>SCORE</span><b>${score.toLocaleString()}</b></div>
         <div class="stat-row"><span>NIVEAU</span><b>${level}</b></div>
         <div class="stat-row"><span>PRECISION</span><b style="color:${accColor}">${acc}%</b></div>
+        <div class="stat-row"><span>KILLS</span><b>${killCount}</b></div>
         <div class="stat-row"><span>MEILLEUR COMBO</span><b>${maxCombo} HITS  (x${getComboMult(maxCombo)})</b></div>
         <div class="stat-row"><span>TIRS</span><b>${shotsHit} / ${shotsFired}</b></div>
     `;
     clickHint.innerText = 'CLIQUER POUR REJOUER';
-    
 }
 
 function levelUpAnim() {
@@ -802,19 +960,22 @@ function levelUpAnim() {
 
 function resetGame() {
     score = 0; level = 1; lives = 5; levelTimer = 15.0;
-    combo = 0; maxCombo = 0; shotsFired = 0; shotsHit = 0;
-    scoreEl.innerText = 0; levelEl.innerText = 1;
+    combo = 0; maxCombo = 0; shotsFired = 0; shotsHit = 0; killCount = 0;
+    recordNotified = false;
+    scoreEl.innerText = 0; levelEl.innerText = 1; killsEl.innerText = 0;
     timeEl.style.color = '#fff';
     updateTimerBar(15);
     scoreEl.classList.remove('score-pop');
+    lowHealthEl.className = '';
 
     targets.forEach(t => scene.remove(t)); targets = [];
     activeParticles.forEach(p => p.frags.forEach(f => scene.remove(f.mesh))); activeParticles = [];
     bombLabels.forEach(b => b.el.remove()); bombLabels = [];
 
-    updateLives(); updateCombo(); 
+    updateLives(); updateCombo();
     statsPanel.style.display = 'none'; hsBadge.style.display = 'none';
     mainMsg.style.textShadow = '';
+    renderLeaderboard(loadLeaderboard());
     spawnTarget();
 }
 
@@ -870,7 +1031,8 @@ function init() {
     const dir = new THREE.DirectionalLight(0xffffff, 0.3);
     dir.position.set(-10, 20, -10); scene.add(dir);
 
-    updateLives(); updateCombo(); 
+    updateLives(); updateCombo();
+    renderLeaderboard(loadLeaderboard());
 
     window.addEventListener('resize', () => {
         camera.aspect = innerWidth / innerHeight;
@@ -1043,6 +1205,8 @@ function animate() {
             // Emissive pulse
             t.material.emissiveIntensity = ud.type === 'bomb'
                 ? 0.5 + 0.6 * Math.abs(Math.sin(elapsed * 9 + ud.birthTime))
+                : ud.type === 'gold'
+                ? 0.6 + 0.4 * Math.abs(Math.sin(elapsed * 6 + ud.birthTime))
                 : 0.4 + 0.25 * Math.sin(elapsed * 2.5 + ud.birthTime);
 
             // Shrink
@@ -1064,7 +1228,7 @@ function animate() {
                 } else {
                     playSound('miss'); flashDamage(); screenShake(0.6);
                     combo = 0; updateCombo();
-                    lives = Math.max(0, lives - 1); updateLives();
+                    lives = Math.max(0, lives - 1); updateLives(); updateLowHealth();
                     if (lives <= 0) { gameOver(); return; }
                 }
             }
