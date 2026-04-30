@@ -855,12 +855,32 @@ function spawnTarget() {
     const speed = baseSpeed * speedMult;
     const angle = Math.random() * Math.PI * 2;
 
+   // Calcule la vitesse et la direction dès le départ
+    const maxSpd = (0.022 + level * 0.007) * speedMult;
+    const initialDir = Math.random() < 0.5 ? -1 : 1;
+
     mesh.userData = {
         type, radius,
         shrinkRate: (0.0008 + level * 0.00025) * shrinkMult,
         birthTime: clock.elapsedTime,
         baseColor: color.clone(),
         spawnScale: 0.0,
+
+        // ── Movement state ──────────────────────────────────────
+        // On donne une vitesse de base instantanée pour qu'elle bouge dès le pop
+        vx: initialDir * maxSpd, 
+        vy: (Math.random() - 0.5) * maxSpd * 0.4,
+        tvx: initialDir * maxSpd, 
+        tvy: (Math.random() - 0.5) * maxSpd * 0.4,
+        maxSpeed: maxSpd,
+        
+        nextBehaviourIn: 0.4 + Math.random() * 0.8,
+        behaviour: 'strafe-right',
+        strafeDir: initialDir,
+        vertBias: (Math.random() - 0.5) * 0.3,
+        accel: 0.12 + Math.random() * 0.08,
+        jukeCooldown: 0,
+    };
 
         // ── Realistic FPS movement state ──────────────────────────────────────
         // Current actual velocity (accelerated toward target velocity)
@@ -888,7 +908,7 @@ function spawnTarget() {
         // Vertical bias (small, players barely move vertically)
         vertBias: (Math.random() - 0.5) * 0.3,
         // Acceleration rate (how quickly they reach max speed — lower = slower start)
-        accel: 4 + Math.random() * 0.8,
+        accel: 1 + Math.random() * 0.8,
         // Juke cooldown prevents back-to-back jukes
         jukeCooldown: 0,
     };
@@ -1291,7 +1311,6 @@ function animate() {
             if (ud.spawnScale < 1) {
                 ud.spawnScale = Math.min(ud.spawnScale + delta * 10, 1);
                 t.scale.setScalar(ud.spawnScale);
-                continue; // don't shrink while spawning
             }
 
             // Movement — realistic FPS player behaviour
@@ -1359,9 +1378,11 @@ function animate() {
                 : 0.4 + 0.25 * Math.sin(elapsed * 2.5 + ud.birthTime);
 
             // Shrink
-            const newScale = t.scale.x - ud.shrinkRate;
-            t.scale.setScalar(newScale);
-
+            let newScale = t.scale.x;
+            if (ud.spawnScale >= 1) {
+                newScale = t.scale.x - ud.shrinkRate;
+                t.scale.setScalar(newScale);
+            }
 
             // Expired
             if (newScale <= 0) {
