@@ -336,6 +336,8 @@
 <div id="hud-kills" class="hud-container">
     <div class="hud-label">KILLS</div>
     <div id="killsDisplay" class="hud-value" style="font-size:32px;color:#888;">0</div>
+    <div class="hud-label" style="margin-top:8px;">PRECISION</div>
+    <div id="accDisplay" style="font-size:20px;font-weight:800;color:#444;">--%</div>
 </div>
 
 <div id="hud-combo" class="hud-container">
@@ -402,7 +404,31 @@ let recordNotified = false; // prevent repeated mid-game new record banners
 
 const MAX_LIVES = 8;
 const BOUNDS = { minX: -8, maxX: 8, minY: 1.5, maxY: 6.5 };
-const QUICK_KILL_WINDOW = 2.2; // seconds
+
+// ─── CENTRAL DIFFICULTY CONFIG ─────────────────────────────────────────────
+// Every parameter that changes per level lives here. Edit this table to tune.
+function getLevelConfig(lv) {
+    // Clamp for lookup, but speed/shrink keep scaling past 10
+    const l = Math.max(1, lv);
+    return {
+        // Seconds per level-up (shorter = more pressure)
+        timerDuration: Math.max(8, 20 - (l - 1) * 1.3),
+        // Max simultaneous targets
+        maxTargets: Math.min(1 + Math.floor((l - 1) / 2), 5),
+        // Base target movement speed (world units/frame)
+        baseSpeed: 0.015 + l * 0.006,
+        // Shrink rate multiplier (higher = targets disappear faster)
+        shrinkBase: 0.00045 + l * 0.000085,
+        // Quick-kill bonus window in seconds (shrinks at high level)
+        quickKillWindow: Math.max(0.9, 2.4 - (l - 1) * 0.16),
+        // More hearts at low levels to compensate early difficulty
+        heartChance: lv <= 2 ? 0.14 : lv <= 4 ? 0.07 : 0.05,
+        bombChance:  l >= 3 ? Math.min(0.08 + (l - 3) * 0.025, 0.22) : 0,
+        goldChance:  0.18 + Math.min((l - 1) * 0.02, 0.14),
+        // Score multiplier bonus at high levels
+        scoreBase: 10 + Math.max(0, (l - 5) * 4),
+    };
+}
 
 // ─── RECOIL ──────────────────────────────────────────────────────────────────
 let recoilAmount = 0;
@@ -449,6 +475,7 @@ const lowHealthEl   = document.getElementById('low-health-overlay');
 const newRecordEl   = document.getElementById('newrecord-banner');
 const killsEl       = document.getElementById('killsDisplay');
 const hsBoardList   = document.getElementById('hs-board-list');
+const accDisplay    = document.getElementById('accDisplay');
 const sensSlider    = document.getElementById('sens-slider');
 const sensValueEl   = document.getElementById('sens-value');
 
@@ -486,7 +513,7 @@ animate();
 // HELPERS
 // ═════════════════════════════════════════════════════════════════════════════
 
-function getMaxTargets() { return Math.min(1 + Math.floor((level - 1) / 2), 5); }
+function getMaxTargets() { return getLevelConfig(level).maxTargets; }
 function getComboMult(c = combo) { return 1 + Math.floor(c / 3); }
 
 function worldToScreen(pos3D) {
@@ -572,7 +599,7 @@ function addScore(pts) {
     scoreEl.classList.add('score-pop');
 }
 
-function updateTimerBar(val, max = 15) {
+function updateTimerBar(val, max = 20) {
     const pct = Math.max(0, val / max) * 100;
     timerBarFill.style.width = pct + '%';
     timerBarFill.style.background = val < 4 ? '#ff3333' : val < 8 ? '#ffaa00' : '#00ffff';
@@ -703,6 +730,14 @@ function addKill() {
     killsEl.classList.remove('score-pop');
     void killsEl.offsetWidth;
     killsEl.classList.add('score-pop');
+    updateAccDisplay();
+}
+
+function updateAccDisplay() {
+    if (shotsFired === 0) { accDisplay.innerText = '--%'; accDisplay.style.color = '#444'; return; }
+    const acc = Math.round((shotsHit / shotsFired) * 100);
+    accDisplay.innerText = acc + '%';
+    accDisplay.style.color = acc >= 70 ? '#00ff88' : acc >= 45 ? '#ffcc00' : '#ff4444';
 }
 
 
@@ -791,107 +826,122 @@ function playSound(type, extra = 0) {
     // ── Sounds ─────────────────────────────────────────────────────────────────
 
     if (type === 'hit') {
-        // WAV + combo pitch climb + humanization + random stereo pan
-        if (hitBuffer) {
-            const src = audioCtx.createBufferSource();
-            src.buffer = hitBuffer;
-            // Pitch: climbs with combo, +small random variance each time
-            src.playbackRate.value = hp(0.88 + Math.min(extra * 0.04, 0.55), 0.14);
-            const g = pannedGain(0.48 + rnd(0.06), rnd(0.35));
-            src.connect(g);
-            src.start();
-        } else {
-            osc1(hp(680 + extra * 50), 'sine', 0.055, 0.1);
-        }
+        // Wii-style satisfying "ding" — warm sine pop, not metallic harsh
+        // Pitch climbs gently with combo (900 → 1300Hz max), soft shimmer layer
+        const base = hp(900 + extra * 38, 0.025);
+
+        // Main ding — warm attack, clean tail
+        const o1 = audioCtx.createOscillator();
+        const g1 = audioCtx.createGain();
+        o1.type = 'sine'; o1.frequency.value = base;
+        g1.gain.setValueAtTime(0, t);
+        g1.gain.linearRampToValueAtTime(0.18, t + 0.005); // soft attack, not jarring
+        g1.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        o1.connect(g1); g1.connect(out); o1.start(t); o1.stop(t + 0.18);
+
+        // Gentle octave shimmer — very quiet, adds warmth
+        const o2 = audioCtx.createOscillator();
+        const g2 = audioCtx.createGain();
+        o2.type = 'sine'; o2.frequency.value = base * 2 * (1 + rnd(0.004));
+        g2.gain.setValueAtTime(0, t);
+        g2.gain.linearRampToValueAtTime(0.045, t + 0.006);
+        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
+        o2.connect(g2); g2.connect(out); o2.start(t); o2.stop(t + 0.12);
 
     } else if (type === 'fire') {
         // Pistol: sub thud + mid punch + high crack noise — 3 simultaneous layers
-        osc1(hp(62, 0.12), 'sine',     0.14, 0.09,  22);        // sub kick
-        osc1(hp(190, 0.09),'triangle', 0.07, 0.05,  65);        // mid body
-        noise(0.22, 0.022, 2500, 10000);                         // high crack
-        noise(0.08, 0.04,  200,  900);                           // low body noise
+        osc1(hp(62, 0.12), 'sine',     0.14, 0.09,  22);
+        osc1(hp(190, 0.09),'triangle', 0.07, 0.05,  65);
+        noise(0.22, 0.022, 2500, 10000);
+        noise(0.08, 0.04,  200,  900);
 
     } else if (type === 'miss') {
         // Bullet impact: thud + ricochet whine + wall debris
-        osc1(hp(85, 0.09),  'sine',     0.08, 0.13, 32);        // thud
-        osc1(hp(360, 0.07), 'sawtooth', 0.04, 0.30, hp(72, 0.05)); // ricochet descend
-        noise(0.07, 0.035, 350, 2200);                           // wall impact
+        osc1(hp(85, 0.09),  'sine',     0.08, 0.13, 32);
+        osc1(hp(360, 0.07), 'sawtooth', 0.04, 0.30, hp(72, 0.05));
+        noise(0.07, 0.035, 350, 2200);
 
     } else if (type === 'bomb') {
-        // Explosion: deep sub + rumble + scatter debris
-        osc1(hp(52, 0.12),  'sine',     0.16, 0.45, 16);        // sub boom
-        osc1(hp(115, 0.10), 'sawtooth', 0.08, 0.28, 38);        // body rumble
-        noise(0.18, 0.20, 60, 700);                              // low rumble noise
-        noise(0.07, 0.08, 900, 5000);                            // debris scatter
+        osc1(hp(52, 0.12),  'sine',     0.16, 0.45, 16);
+        osc1(hp(115, 0.10), 'sawtooth', 0.08, 0.28, 38);
+        noise(0.18, 0.20, 60, 700);
+        noise(0.07, 0.08, 900, 5000);
 
     } else if (type === 'gold') {
-        // Coin shimmer: detuned chord — each partial slightly off for chorus/shimmer
-        const base = hp(880, 0.03);
-        [0, 4, 7, 12].forEach((semitones, i) => {
-            // Musical intervals + per-partial micro-detune
-            const f = base * Math.pow(2, semitones / 12) * (1 + rnd(0.007));
-            osc1(f, 'sine', 0.024, 0.16 + i * 0.025, null, i * 0.012);
-        });
-        osc1(hp(3520, 0.02), 'sine', 0.012, 0.09); // shimmer top
-
-    } else if (type === 'heart') {
-        // Warm rising interval — reassuring
-        osc1(hp(440, 0.04), 'sine', 0.045, 0.28, hp(660, 0.03));
-        osc1(hp(660, 0.04), 'sine', 0.028, 0.22, hp(880, 0.03));
-
-    } else if (type === 'levelup') {
-        // Ascending arpeggio with humanised timing and pitch
-        [300, 420, 560, 800, 1120].forEach((f, i) => {
-            const delay = i * 0.075 + rnd(0.009);
+        // Wii coin sound — bright C major arpeggio, short, delightful
+        // C5-E5-G5 (523, 659, 784) with quick stagger
+        [523, 659, 784].forEach((f, i) => {
             const o = audioCtx.createOscillator();
             const g = audioCtx.createGain();
-            o.type = 'sine';
-            o.frequency.value = hp(f, 0.02);
+            o.type = 'sine'; o.frequency.value = hp(f, 0.012);
+            g.gain.setValueAtTime(0, t + i * 0.028);
+            g.gain.linearRampToValueAtTime(0.055, t + i * 0.028 + 0.008);
+            g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.028 + 0.18);
+            o.connect(g); g.connect(out); o.start(t + i * 0.028); o.stop(t + i * 0.028 + 0.2);
+        });
+        // Sparkle octave above
+        const os = audioCtx.createOscillator();
+        const gs = audioCtx.createGain();
+        os.type = 'sine'; os.frequency.value = hp(1046, 0.015);
+        gs.gain.setValueAtTime(0, t + 0.07);
+        gs.gain.linearRampToValueAtTime(0.025, t + 0.08);
+        gs.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        os.connect(gs); gs.connect(out); os.start(t + 0.07); os.stop(t + 0.24);
+
+    } else if (type === 'heart') {
+        // Wii Mii channel warmth — gentle rising perfect 4th
+        const base = hp(440, 0.03);
+        osc1(base,          'sine', 0.038, 0.32, base * 1.335); // P4 rise
+        osc1(base * 1.5,    'sine', 0.018, 0.25, null, 0.04);  // P5 harmony, delayed
+
+    } else if (type === 'levelup') {
+        // Zelda item fanfare lite — pentatonic C D E G A, warm and rising
+        [523, 587, 659, 784, 880].forEach((f, i) => {
+            const delay = i * 0.068;
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sine'; o.frequency.value = hp(f, 0.015);
             g.gain.setValueAtTime(0, t + delay);
-            g.gain.linearRampToValueAtTime(0.07, t + delay + 0.018);
-            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.2);
-            o.connect(g); g.connect(out);
-            o.start(t); o.stop(t + delay + 0.24);
+            g.gain.linearRampToValueAtTime(0.035, t + delay + 0.012);
+            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.22);
+            o.connect(g); g.connect(out); o.start(t + delay); o.stop(t + delay + 0.26);
         });
 
     } else if (type === 'gameover') {
-        // Dramatic descent + low drone + impact noise
         osc1(hp(295, 0.04), 'sawtooth', 0.07, 0.72, hp(52, 0.03));
         osc1(hp(148, 0.04), 'sine',     0.04, 0.95, hp(28, 0.03));
         noise(0.04, 0.35, 80, 600);
 
     } else if (type === 'milestone') {
-        // Rising cascade — slightly detuned, staggered
-        [500, 700, 1000, 1400, 1900].forEach((f, i) => {
-            const delay = i * 0.062 + rnd(0.008);
+        // Wii "success" chime — C major triad, very soft, staggered, non-intrusive
+        // Stays in background, doesn't interrupt the game feeling
+        [523, 659, 784].forEach((f, i) => {
+            const delay = i * 0.055;
             const o = audioCtx.createOscillator();
             const g = audioCtx.createGain();
-            o.type = 'sine';
-            o.frequency.value = hp(f, 0.03);
+            o.type = 'sine'; o.frequency.value = hp(f, 0.01);
             g.gain.setValueAtTime(0, t + delay);
-            g.gain.linearRampToValueAtTime(0.065, t + delay + 0.014);
-            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.16);
-            o.connect(g); g.connect(out);
-            o.start(t); o.stop(t + delay + 0.2);
+            g.gain.linearRampToValueAtTime(0.022, t + delay + 0.015);
+            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.28);
+            o.connect(g); g.connect(out); o.start(t + delay); o.stop(t + delay + 0.32);
         });
 
     } else if (type === 'quick') {
-        osc1(hp(1100, 0.04), 'sine', 0.05, 0.07);
-        osc1(hp(1650, 0.04), 'sine', 0.03, 0.055, null, 0.025);
+        // Two soft ascending notes — minor 3rd, gentle
+        osc1(hp(659, 0.02), 'sine', 0.028, 0.12);
+        osc1(hp(784, 0.02), 'sine', 0.018, 0.10, null, 0.045);
 
     } else if (type === 'newhs') {
-        // Perfect 4th intervals, slightly detuned for richness
-        [500, 667, 889, 1185, 1580].forEach((f, i) => {
-            const delay = i * 0.068 + rnd(0.009);
+        // Wii-style celebration — C major arpeggio + octave, warm and joyful
+        [523, 659, 784, 1046, 1318].forEach((f, i) => {
+            const delay = i * 0.058;
             const o = audioCtx.createOscillator();
             const g = audioCtx.createGain();
-            o.type = 'sine';
-            o.frequency.value = hp(f, 0.02);
+            o.type = 'sine'; o.frequency.value = hp(f, 0.012);
             g.gain.setValueAtTime(0, t + delay);
-            g.gain.linearRampToValueAtTime(0.065, t + delay + 0.018);
-            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.18);
-            o.connect(g); g.connect(out);
-            o.start(t); o.stop(t + delay + 0.22);
+            g.gain.linearRampToValueAtTime(0.030, t + delay + 0.012);
+            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.22);
+            o.connect(g); g.connect(out); o.start(t + delay); o.stop(t + delay + 0.26);
         });
     }
 }
@@ -901,19 +951,18 @@ function playSound(type, extra = 0) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 function pickType() {
-    const r = Math.random();
+    const cfg = getLevelConfig(level);
     const bombCount = targets.filter(t => t.userData.type === 'bomb').length;
-    const maxBombs  = Math.max(0, getMaxTargets() - 1); // always leave 1 non-bomb slot
+    const maxBombs  = Math.max(0, cfg.maxTargets - 1);
+    const r = Math.random();
 
-    // Never fill all slots with bombs
     if (bombCount >= maxBombs) {
-        if (level >= 2 && r < 0.07) return 'heart';
-        return r < 0.35 ? 'gold' : 'normal';
+        if (r < cfg.heartChance * 1.4) return 'heart';
+        return r < cfg.goldChance * 1.5 ? 'gold' : 'normal';
     }
-
-    if (level >= 2 && r < 0.05)  return 'heart';
-    if (level >= 3 && r < 0.20)  return 'bomb';
-    if (r < 0.28)                return 'gold';
+    if (r < cfg.heartChance)                                         return 'heart';
+    if (r < cfg.heartChance + cfg.bombChance)                        return 'bomb';
+    if (r < cfg.heartChance + cfg.bombChance + cfg.goldChance)       return 'gold';
     return 'normal';
 }
 
@@ -961,7 +1010,7 @@ function spawnTarget() {
                   : (0.55 + Math.random() * 0.9);
 
     // Depth variation — closer targets feel faster, farther feel smaller
-    const depthVar = -15 - Math.random() * 8;
+    const depthVar = -10 - Math.random() * 5;
 
     // Minimum distance from existing targets
     const MIN_DIST = 2.0;
@@ -976,18 +1025,14 @@ function spawnTarget() {
     );
     mesh.position.z = depthVar;
 
-    // Velocity
-    const baseSpeed = 0.02 + level * 0.008;
-    const speed = baseSpeed * speedMult;
-    const angle = Math.random() * Math.PI * 2;
-
-    // Calcule la vitesse et la direction dès le départ
-    const maxSpd = (0.022 + level * 0.007) * speedMult;
+    // Velocity — driven by level config
+    const cfg = getLevelConfig(level);
+    const maxSpd = cfg.baseSpeed * speedMult;
     const initialDir = Math.random() < 0.5 ? -1 : 1;
 
     mesh.userData = {
         type, radius,
-        shrinkRate: (0.0008 + level * 0.00025) * shrinkMult,
+        shrinkRate: cfg.shrinkBase * shrinkMult,
         birthTime: clock.elapsedTime,
         baseColor: color.clone(),
         spawnScale: 0.0,
@@ -1049,8 +1094,6 @@ function onShoot() {
         crosshair.classList.add('hit');
         setTimeout(() => crosshair.classList.remove('hit'), 65);
 
-        const isQuick = (clock.elapsedTime - birthTime) < QUICK_KILL_WINDOW;
-
         if (type === 'bomb') {
             playSound('bomb');
             flashDamage(); screenShake(1.6);
@@ -1071,11 +1114,13 @@ function onShoot() {
             combo++; if (combo > maxCombo) maxCombo = combo;
             shotsHit++; addKill(); updateCombo(); checkStreak();
 
+            const hitCfg = getLevelConfig(level);
             const mult   = getComboMult();
             const bonus  = type === 'gold' ? 3 : 1;
-            let pts = 10 * level * mult * bonus;
+            let pts = hitCfg.scoreBase * level * mult * bonus;
 
-            if (isQuick && type !== 'bomb') {
+            const isQuick = (clock.elapsedTime - birthTime) < hitCfg.quickKillWindow;
+            if (isQuick) {
                 pts = Math.round(pts * 1.5);
                 showQuickKill();
                 playSound('quick');
@@ -1102,6 +1147,7 @@ function onShoot() {
         setTimeout(() => crosshair.classList.remove('miss'), 85);
         combo = 0; updateCombo();
         lives = Math.max(0, lives - 1); updateLives(); updateLowHealth();
+        updateAccDisplay();
         if (lives <= 0) { gameOver(); return; }
     }
 }
@@ -1156,10 +1202,11 @@ function levelUpAnim() {
 }
 
 function resetGame() {
-    score = 0; level = 1; lives = 5; levelTimer = 15.0;
+    score = 0; level = 1; lives = 5; levelTimer = getLevelConfig(1).timerDuration;
     combo = 0; maxCombo = 0; shotsFired = 0; shotsHit = 0; killCount = 0;
     recordNotified = false;
     scoreEl.innerText = 0; levelEl.innerText = 1; killsEl.innerText = 0;
+    accDisplay.innerText = '--%'; accDisplay.style.color = '#444';
     timeEl.style.color = '#fff';
     updateTimerBar(15);
     scoreEl.classList.remove('score-pop');
@@ -1379,21 +1426,23 @@ function animate() {
     if (isPlaying && state === 'PLAYING') {
 
         // ── Level timer ──
-        if (level < 10) {
+        const cfg = getLevelConfig(level);
+        if (level >= 15) {
+            timeEl.innerText = '∞'; timeEl.style.color = '#00ffff';
+            timerBarFill.style.width = '100%';
+        } else {
             levelTimer -= delta;
             if (levelTimer <= 0) {
                 level++; levelEl.innerText = level;
-                levelTimer = 15.0;
+                levelTimer = getLevelConfig(level).timerDuration;
                 if (lives < MAX_LIVES) { lives++; updateLives(); }
                 levelUpAnim();
             } else {
-                const t = levelTimer;
-                timeEl.innerText = t.toFixed(1);
-                timeEl.style.color = t < 4 ? '#ff3333' : t < 8 ? '#ffaa00' : '#fff';
-                updateTimerBar(t);
+                const maxT = cfg.timerDuration;
+                timeEl.innerText = levelTimer.toFixed(1);
+                timeEl.style.color = levelTimer < 4 ? '#ff3333' : levelTimer < 8 ? '#ffaa00' : '#fff';
+                updateTimerBar(levelTimer, maxT);
             }
-        } else {
-            timeEl.innerText = '∞'; timeEl.style.color = '#00ffff';
         }
 
         // ── Update targets ──
@@ -1506,6 +1555,42 @@ function animate() {
                 ? goldPulse
                 : 0.4 + 0.25 * Math.sin(elapsed * 2.5 + ud.birthTime);
             if (ud.pointLight) ud.pointLight.intensity = goldPulse * 1.8;
+
+            // Age urgency — normal/gold targets shift color as they shrink (visual warning)
+            if (ud.type === 'normal' || ud.type === 'gold') {
+                const lifeRatio = Math.max(0, t.scale.x / (ud.sizeVar || 1));
+                if (lifeRatio < 0.45) {
+                    // Approaching expiry: shift emissive toward orange/red
+                    const urgency = 1 - lifeRatio / 0.45;
+                    t.material.emissive.setRGB(
+                        ud.baseColor.r + urgency * (1 - ud.baseColor.r) * 0.7,
+                        ud.baseColor.g * (1 - urgency * 0.6),
+                        ud.baseColor.b * (1 - urgency * 0.9)
+                    );
+                } else {
+                    t.material.emissive.copy(ud.baseColor);
+                }
+            }
+
+            // Flick teleport — at level 6+, targets occasionally blink to a new position
+            if (level >= 6 && ud.type !== 'bomb' && ud.spawnScale >= 1) {
+                ud.flickCooldown = (ud.flickCooldown || 0) - delta;
+                if (ud.flickCooldown <= 0) {
+                    if (Math.random() < 0.012) {
+                        // Instant teleport to random position — flick target training
+                        t.position.x = BOUNDS.minX + Math.random() * (BOUNDS.maxX - BOUNDS.minX);
+                        t.position.y = BOUNDS.minY + Math.random() * (BOUNDS.maxY - BOUNDS.minY);
+                        ud.vx = (Math.random() - 0.5) * ud.maxSpeed * 2;
+                        ud.vy = (Math.random() - 0.5) * ud.maxSpeed;
+                        ud.flickCooldown = 1.2 + Math.random() * 1.5;
+                        // Flash white briefly to signal the teleport
+                        t.material.emissive.setRGB(1, 1, 1);
+                        t.material.emissiveIntensity = 2.5;
+                    } else {
+                        ud.flickCooldown = 0.05; // check often
+                    }
+                }
+            }
 
             // Shrink
             let newScale = t.scale.x;
