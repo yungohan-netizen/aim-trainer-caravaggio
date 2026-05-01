@@ -796,7 +796,7 @@ function playSound(type, extra = 0) {
             const src = audioCtx.createBufferSource();
             src.buffer = hitBuffer;
             // Pitch: climbs with combo, +small random variance each time
-            src.playbackRate.value = hp(0.88 + Math.min(extra * 0.04, 0.55), 0.04);
+            src.playbackRate.value = hp(0.88 + Math.min(extra * 0.04, 0.55), 0.14);
             const g = pannedGain(0.48 + rnd(0.06), rnd(0.35));
             src.connect(g);
             src.start();
