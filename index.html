@@ -363,7 +363,7 @@
         <div style="color:#222;letter-spacing:4px;margin-bottom:10px;font-size:10px;">CIBLES QUI APPARAISSENT</div>
         <div style="display:flex;flex-direction:column;gap:7px;">
             <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#888;flex-shrink:0"></span><span><span style="color:#666">COULEURS</span> — TIRER</span></div>
-            <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffcc00;flex-shrink:0"></span><span><span style="color:#554400">OR</span> — RAPIDE, ×3 points</span></div>
+            <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffcc00;flex-shrink:0"></span><span><span style="color:#554400">OR</span> — RAPIDE, x3 points</span></div>
             <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ff3333;flex-shrink:0"></span><span><span style="color:#550000">BOMBE</span> — NE PAS TIRER, disparaît</span></div>
             <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff44aa;flex-shrink:0"></span><span><span style="color:#551133">COEUR</span> — +1 VIE</span></div>
         </div>
@@ -457,6 +457,26 @@ const _tmpVec = new THREE.Vector3();
 
 // ─── AUDIO ───────────────────────────────────────────────────────────────────
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+// ─── MASTER BUS — compressor prevents clipping during rapid fire ──────────────
+const masterBus = audioCtx.createDynamicsCompressor();
+masterBus.threshold.value = -14;
+masterBus.knee.value      = 8;
+masterBus.ratio.value     = 4;
+masterBus.attack.value    = 0.002;
+masterBus.release.value   = 0.12;
+masterBus.connect(audioCtx.destination);
+
+// ─── HIT SOUND (WAV inline base64 — replace with Kenney drop_003.ogg if desired) ──
+const HIT_SOUND_B64 = 'data:audio/wav;base64,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QAA8ADcAMQAqACMAHAAUAAwABAD8//T/7P/l/93/1//Q/8v/xv/C/7//vf+8/7z/vf+//8H/xf/J/87/1P/a/+H/6P/w//j/AAAGAA4AFgAdACQAKgAvADQAOQA8AD4AQABBAEEAQAA+ADsANwAzAC4AKAAiABsAFAANAAUA///3//D/6f/i/9z/1v/R/83/yf/G/8T/w//C/8P/xP/G/8n/zf/R/9b/3P/i/+n/7//2//7/BAALABIAGAAfACQAKgAuADIANgA4ADoAOwA7ADoAOQA2ADMALwArACYAIAAbABQADgAHAAAA+v/0/+3/5//h/9z/1//T/8//zP/K/8j/yP/I/8n/y//N/9D/1P/Y/93/4//p/+//9f/7/wEABwAOABQAGgAfACQAKQAsADAAMgA0ADUANgA1ADQAMgAwAC0AKQAkACAAGgAVAA8ACQACAP3/9//x/+v/5v/h/9z/2P/V/9L/0P/O/83/zf/N/8//0f/T/9b/2v/f/+P/6P/u//T/+f///wQACgAQABUAGgAfACMAJwAqAC0ALwAwADEAMQAwAC8ALQAqACcAIwAfABoAFQAQAAoABQAAAPv/9f/w/+v/5v/i/97/2v/X/9X/0//S/9L/0v/T/9T/1v/Z/9z/4P/k/+j/7f/y//f//f8BAAYADAARABUAGgAeACIAJQAnACoAKwAsACwALAArACoAJwAlACIAHgAaABYAEQAMAAcAAgD+//n/9P/v/+v/5//j/9//3P/a/9j/1//W/9b/1v/X/9n/2//d/+H/5P/o/+z/8f/1//r///8DAAgADAARABUAGQAdACAAIgAlACYAJwAoACgAKAAnACUAIwAgAB0AGgAWABIADgAJAAUAAAD9//j/9P/v/+v/6P/k/+H/3//d/9v/2v/a/9r/2v/b/93/3//i/+T/6P/r/+//8//4//z/AAAEAAgADAAQABQAGAAbAB4AIAAiACMAJAAlACQAJAAjACEAHwAdABoAFwATAA8ACwAHAAMAAAD8//j/9P/w/+z/6f/m/+T/4f/g/97/3v/d/93/3v/f/+H/4//l/+j/6//u//L/9v/5//3/AAAEAAgADAAQABMAFgAZABsAHQAfACAAIQAhACEAIAAfAB4AHAAZABcAFAARAA0ACgAGAAIA///7//j/9P/x/+7/6//o/+b/5P/i/+H/4f/g/+H/4f/i/+T/5v/o/+r/7f/w//T/9//7//7/AQAFAAgADAAPABIAFQAXABkAGwAcAB0AHgAeAB4AHQAcABsAGQAXABQAEgAPAAwACAAFAAEA///7//j/9f/y/+//7P/q/+j/5v/l/+T/4//j/+T/5P/l/+f/6P/q/+3/7//y//X/+P/7////AQAEAAgACwAOABAAEwAVABcAGQAaABsAGwAbABsAGgAaABgAFwAVABIAEAANAAoABwAEAAEA///8//n/9v/z//D/7v/s/+r/6f/n/+f/5v/m/+b/5//o/+n/6//s/+//8f/z//b/+f/8////AQAEAAcACgAMAA8AEQATABUAFgAXABgAGQAZABkAGAAXABYAFAATABEADgAMAAkABwAEAAEA///8//r/9//0//L/8P/u/+z/6//q/+n/6f/o/+n/6f/q/+v/7P/u//D/8v/0//f/+v/8////AQADAAYACQALAA0ADwARABMAFAAVABYAFgAWABYAFgAVABQAEwARAA8ADQALAAkABgAEAAEAAAD9//v/+P/2//T/8v/w/+7/7f/s/+v/6//r/+v/6//s/+3/7v/w//H/8//1//f/+v/8////AAADAAUABwAKAAwADgAPABEAEgATABQAFAAUABQAFAATABIAEQAQAA4ADAAKAAgABgAEAAIAAAD+//z/+f/3//X/8//y//D/7//u/+3/7f/t/+3/7f/u/+7/7//x//L/9P/2//j/+v/8//7/AAACAAQABgAIAAoADAANAA8AEAARABIAEgASABIAEgASABEAEAAPAA0ADAAKAAgABgAEAAIAAAD///3/+//5//f/9f/z//L/8f/w/+//7//u/+7/7//v//D/8f/y//P/9f/2//j/+v/8//7/AAABAAMABQAHAAkACgAMAA0ADgAPABAAEAARABEAEQAQABAADwAOAAwACwAKAAgABgAEAAIAAAAAAP7//P/6//j/9//1//T/8//y//H/8f/w//D/8P/x//H/8v/z//T/9f/3//j/+v/8//3///8AAAIABAAFAAcACQAKAAsADAANAA4ADwAPAA8ADwAPAA4ADgANAAwACwAJAAgABgAFAAMAAQAAAP///f/7//r/+P/3//b/9P/0//P/8v/y//L/8v/y//L/8//0//X/9v/3//j/+v/7//3//v8AAAEAAgAEAAYABwAIAAoACwAMAAwADQANAA4ADgAOAA0ADQAMAAsACgAJAAgABgAFAAMAAgAAAAAA/v/9//v/+v/4//f/9v/1//T/9P/z//P/8//z//P/9P/0//X/9v/3//j/+v/7//z//v///wAAAQADAAQABgAHAAgACQAKAAsACwAMAAwADAAMAAwADAALAAsACgAJAAgABwAFAAQAAwABAAAA///+//z/+//6//n/+P/3//b/9f/1//T/9P/0//T/9f/1//b/9v/3//j/+f/7//z//f///wAAAAACAAMABAAFAAcACAAJAAkACgALAAsACwALAAsACwALAAoACQAJAAgABwAGAAQAAwACAAEAAAD///7//P/7//r/+f/4//f/9//2//b/9f/1//X/9v/2//b/9//4//j/+f/6//v//f/+////AAABAAIAAwAEAAUABgAHAAgACQAJAAoACgAKAAoACgAKAAkACQAIAAgABwAGAAUABAADAAEAAAAAAP///v/9//z/+//6//n/+P/4//f/9//2//b/9v/3//f/9//4//n/+f/6//v//P/9//7///8AAAEAAgADAAQABQAGAAcABwAIAAgACQAJAAkACQAJAAkACAAIAAcABwAGAAUABAADAAIAAQAAAAAA///+//3//P/7//r/+f/5//j/+P/4//f/9//3//j/+P/4//n/+f/6//v//P/9//7///8AAAAAAQACAAMABAAEAAUABgAHAAcACAAIAAgACAAIAAgACAAIAAcABwAGAAUABAAEAAMAAgABAAAAAAD///7//f/8//v/+//6//r/+f/5//j/+P/4//j/+P/5//n/+f/6//v/+//8//3//v///wAAAAABAAEAAgADAAQABQAFAAYABgAHAAcABwAHAAcABwAHAAcABgAGAAUABQAEAAMAAgACAAEAAAAAAP///v/9//3//P/7//v/+v/6//n/+f/5//n/+f/5//n/+v/6//v/+//8//z//f/+////AAAAAAAAAQACAAMAAwAEAAUABQAGAAYABgAHAAcABwAHAAYABgAGAAUABQAEAAQAAwACAAIAAQAAAAAA//////7//f/8//z/+//7//r/+v/6//r/+v/6//r/+v/6//v/+//8//z//f/9//7///8AAAAAAAABAAIAAgADAAQABAAFAAUABQAGAAYABgAGAAYABgAGAAUABQAFAAQAAwADAAIAAQABAAAAAAAAAP///v/+//3//P/8//v/+//7//v/+v/6//r/+v/7//v/+//7//z//P/9//7//v///wAAAAAAAAEAAQACAAIAAwAEAAQABAAFAAUABQAFAAUABQAFAAUABQAFAAQABAADAAMAAgABAAEAAAAAAAAA//////7//f/9//z//P/8//v/+//7//v/+//7//v/+//7//z//P/9//3//v/+//////8AAAAAAAABAAEAAgADAAMAAwAEAAQABAAFAAUABQAFAAUABQAEAAQABAADAAMAAwACAAIAAQAAAAAAAAAAAP///v/+//3//f/9//z//P/8//z/+//7//v/+//8//z//P/8//3//f/+//7//////wAAAAAAAAEAAQACAAIAAwADAAMABAAEAAQABAAEAAQABAAEAAQABAAEAAMAAwACAAIAAgABAAEAAAAAAAAA//////7//v/+//3//f/9//z//P/8//z//P/8//z//P/8//3//f/9//7//v//////AAAAAAAAAAABAAEAAgACAAIAAwADAAMABAAEAAQABAAEAAQABAAEAAMAAwADAAIAAgACAAEAAQAAAAAAAAAAAP/////+//7//v/9//3//f/9//z//P/8//z//P/8//3//f/9//3//v/+/////////wAAAAAAAAAAAQABAAIAAgACAAMAAwADAAMAAwADAAQAAwADAAMAAwADAAMAAgACAAIAAQABAAAAAAAAAAAAAAD//////v/+//7//v/9//3//f/9//3//f/9//3//f/9//3//v/+//7//v//////AAAAAAAAAAAAAAEAAQABAAIAAgACAAMAAwADAAMAAwADAAMAAwADAAMAAwACAAIAAgABAAEAAQAAAAAAAAAAAAAA/////////v/+//7//v/9//3//f/9//3//f/9//3//f/+//7//v/+/////////wAAAAAAAAAAAAABAAEAAQACAAIAAgACAAMAAwADAAMAAwADAAMAAwACAAIAAgACAAEAAQABAAAAAAAAAAAAAAAAAP////////7//v/+//7//v/9//3//f/9//3//f/+//7//v/+//7/////////AAAAAAAAAAAAAAAAAQABAAEAAQACAAIAAgACAAIAAgACAAIAAgACAAIAAgACAAIAAQABAAEAAQAAAAAAAAAAAAAAAAD///////////7//v/+//7//v/+//7//v/+//7//v/+//7//v///////////wAAAAAAAAAAAAAAAAEAAQABAAEAAgACAAIAAgACAAIAAgACAAIAAgACAAIAAgACAAEAAQABAAEAAAAAAAAAAAAAAAAAAAD///////////7//v/+//7//v/+//7//v/+//7//v/+//////////////8AAAAAAAAAAAAAAAAAAAEAAQABAAEAAQACAAIAAgACAAIAAgACAAIAAgACAAIAAQABAAEAAQAAAAAAAAAAAAAAAAAAAAAA//////////////7//v/+//7//v/+//7//v/+//7//////////////wAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQACAAIAAgACAAIAAgACAAIAAQABAAEAAQABAAEAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////+//7//v/+//7///////////////////8AAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQABAAEAAQACAAEAAQABAAEAAQABAAEAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAA////////////////////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////////////////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////////////////////8=';
+let hitBuffer = null;
+(async () => {
+    try {
+        const res = await fetch(HIT_SOUND_B64);
+        const ab  = await res.arrayBuffer();
+        hitBuffer = await audioCtx.decodeAudioData(ab);
+    } catch(e) { /* fallback to synth */ }
+})();
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
 init();
@@ -712,75 +732,168 @@ function spawnParticles(position, color, count = 10) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 function playSound(type, extra = 0) {
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain); gain.connect(audioCtx.destination);
+    const t   = audioCtx.currentTime;
+    const out = masterBus;
 
-    const multi = (freqs, dur, vol = 0.06, wave = 'sine', sweep = null) => {
-        freqs.forEach((f, i) => {
-            const o2 = audioCtx.createOscillator();
-            const g2 = audioCtx.createGain();
-            o2.connect(g2); g2.connect(audioCtx.destination);
-            o2.type = wave; o2.frequency.value = f;
-            if (sweep) o2.frequency.exponentialRampToValueAtTime(sweep[i] || f, t + dur);
-            g2.gain.setValueAtTime(vol / freqs.length, t + i * 0.04);
-            g2.gain.exponentialRampToValueAtTime(0.001, t + dur + i * 0.04);
-            o2.start(t + i * 0.04); o2.stop(t + dur + i * 0.04 + 0.05);
-        });
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    // Symmetric random in [-range, +range]
+    const rnd = range => (Math.random() - 0.5) * 2 * range;
+    // Humanised pitch: base × (1 ± variance)
+    const hp  = (base, variance = 0.05) => base * (1 + rnd(variance));
+
+    // One oscillator with optional frequency sweep
+    const osc1 = (freq, wave, vol, dur, freqEnd = null, delay = 0) => {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = wave;
+        o.frequency.setValueAtTime(freq, t + delay);
+        if (freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, t + delay + dur);
+        g.gain.setValueAtTime(0, t + delay);
+        g.gain.linearRampToValueAtTime(vol, t + delay + 0.004);   // tiny attack avoids click
+        g.gain.exponentialRampToValueAtTime(0.001, t + delay + dur);
+        o.connect(g); g.connect(out);
+        o.start(t + delay); o.stop(t + delay + dur + 0.02);
     };
 
+    // Band-limited noise burst (real gunshot/impact texture)
+    const noise = (vol, dur, loFreq, hiFreq, delay = 0) => {
+        const len = Math.ceil(audioCtx.sampleRate * (dur + 0.01));
+        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const d   = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const filt = audioCtx.createBiquadFilter();
+        filt.type = 'bandpass';
+        filt.frequency.value = Math.sqrt(loFreq * hiFreq); // geometric center
+        filt.Q.value = Math.sqrt(loFreq * hiFreq) / (hiFreq - loFreq);
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(vol, t + delay);
+        g.gain.exponentialRampToValueAtTime(0.001, t + delay + dur);
+        src.connect(filt); filt.connect(g); g.connect(out);
+        src.start(t + delay); src.stop(t + delay + dur + 0.01);
+    };
+
+    // Panned gain node (stereo width for hit sounds)
+    const pannedGain = (vol, panAmt) => {
+        const g = audioCtx.createGain();
+        g.gain.value = vol;
+        if (audioCtx.createStereoPanner) {
+            const p = audioCtx.createStereoPanner();
+            p.pan.value = panAmt;
+            g.connect(p); p.connect(out);
+            return g;
+        }
+        g.connect(out);
+        return g;
+    };
+
+    // ── Sounds ─────────────────────────────────────────────────────────────────
+
     if (type === 'hit') {
-        const p = 700 + extra * 55;
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(p, t);
-        osc.frequency.exponentialRampToValueAtTime(p * 1.6, t + 0.08);
-        gain.gain.setValueAtTime(0.05, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-        osc.start(); osc.stop(t + 0.12);
-    } else if (type === 'gold') {
-        multi([880, 1320, 1760], 0.1, 0.055);
-    } else if (type === 'heart') {
-        multi([660, 990], 0.18, 0.055, 'sine', [990, 1320]);
-    } else if (type === 'bomb') {
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(90, t);
-        osc.frequency.exponentialRampToValueAtTime(28, t + 0.35);
-        gain.gain.setValueAtTime(0.09, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
-        osc.start(); osc.stop(t + 0.4);
-    } else if (type === 'miss') {
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(140, t);
-        gain.gain.setValueAtTime(0.04, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-        osc.start(); osc.stop(t + 0.22);
+        // WAV + combo pitch climb + humanization + random stereo pan
+        if (hitBuffer) {
+            const src = audioCtx.createBufferSource();
+            src.buffer = hitBuffer;
+            // Pitch: climbs with combo, +small random variance each time
+            src.playbackRate.value = hp(0.88 + Math.min(extra * 0.04, 0.55), 0.04);
+            const g = pannedGain(0.48 + rnd(0.06), rnd(0.35));
+            src.connect(g);
+            src.start();
+        } else {
+            osc1(hp(680 + extra * 50), 'sine', 0.055, 0.1);
+        }
+
     } else if (type === 'fire') {
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(120, t);
-        gain.gain.setValueAtTime(0.018, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-        osc.start(); osc.stop(t + 0.05);
+        // Pistol: sub thud + mid punch + high crack noise — 3 simultaneous layers
+        osc1(hp(62, 0.12), 'sine',     0.14, 0.09,  22);        // sub kick
+        osc1(hp(190, 0.09),'triangle', 0.07, 0.05,  65);        // mid body
+        noise(0.22, 0.022, 2500, 10000);                         // high crack
+        noise(0.08, 0.04,  200,  900);                           // low body noise
+
+    } else if (type === 'miss') {
+        // Bullet impact: thud + ricochet whine + wall debris
+        osc1(hp(85, 0.09),  'sine',     0.08, 0.13, 32);        // thud
+        osc1(hp(360, 0.07), 'sawtooth', 0.04, 0.30, hp(72, 0.05)); // ricochet descend
+        noise(0.07, 0.035, 350, 2200);                           // wall impact
+
+    } else if (type === 'bomb') {
+        // Explosion: deep sub + rumble + scatter debris
+        osc1(hp(52, 0.12),  'sine',     0.16, 0.45, 16);        // sub boom
+        osc1(hp(115, 0.10), 'sawtooth', 0.08, 0.28, 38);        // body rumble
+        noise(0.18, 0.20, 60, 700);                              // low rumble noise
+        noise(0.07, 0.08, 900, 5000);                            // debris scatter
+
+    } else if (type === 'gold') {
+        // Coin shimmer: detuned chord — each partial slightly off for chorus/shimmer
+        const base = hp(880, 0.03);
+        [0, 4, 7, 12].forEach((semitones, i) => {
+            // Musical intervals + per-partial micro-detune
+            const f = base * Math.pow(2, semitones / 12) * (1 + rnd(0.007));
+            osc1(f, 'sine', 0.024, 0.16 + i * 0.025, null, i * 0.012);
+        });
+        osc1(hp(3520, 0.02), 'sine', 0.012, 0.09); // shimmer top
+
+    } else if (type === 'heart') {
+        // Warm rising interval — reassuring
+        osc1(hp(440, 0.04), 'sine', 0.045, 0.28, hp(660, 0.03));
+        osc1(hp(660, 0.04), 'sine', 0.028, 0.22, hp(880, 0.03));
+
     } else if (type === 'levelup') {
-        multi([400, 600, 900, 1200], 0.14, 0.07, 'sine');
+        // Ascending arpeggio with humanised timing and pitch
+        [300, 420, 560, 800, 1120].forEach((f, i) => {
+            const delay = i * 0.075 + rnd(0.009);
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sine';
+            o.frequency.value = hp(f, 0.02);
+            g.gain.setValueAtTime(0, t + delay);
+            g.gain.linearRampToValueAtTime(0.07, t + delay + 0.018);
+            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.2);
+            o.connect(g); g.connect(out);
+            o.start(t); o.stop(t + delay + 0.24);
+        });
+
     } else if (type === 'gameover') {
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(280, t);
-        osc.frequency.exponentialRampToValueAtTime(55, t + 0.65);
-        gain.gain.setValueAtTime(0.07, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
-        osc.start(); osc.stop(t + 0.72);
+        // Dramatic descent + low drone + impact noise
+        osc1(hp(295, 0.04), 'sawtooth', 0.07, 0.72, hp(52, 0.03));
+        osc1(hp(148, 0.04), 'sine',     0.04, 0.95, hp(28, 0.03));
+        noise(0.04, 0.35, 80, 600);
+
     } else if (type === 'milestone') {
-        multi([500, 700, 1000, 1400, 1900], 0.1, 0.07, 'sine');
+        // Rising cascade — slightly detuned, staggered
+        [500, 700, 1000, 1400, 1900].forEach((f, i) => {
+            const delay = i * 0.062 + rnd(0.008);
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sine';
+            o.frequency.value = hp(f, 0.03);
+            g.gain.setValueAtTime(0, t + delay);
+            g.gain.linearRampToValueAtTime(0.065, t + delay + 0.014);
+            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.16);
+            o.connect(g); g.connect(out);
+            o.start(t); o.stop(t + delay + 0.2);
+        });
+
     } else if (type === 'quick') {
-        multi([880, 1320], 0.1, 0.06, 'sine');
+        osc1(hp(1100, 0.04), 'sine', 0.05, 0.07);
+        osc1(hp(1650, 0.04), 'sine', 0.03, 0.055, null, 0.025);
+
     } else if (type === 'newhs') {
-        multi([600, 900, 1200, 1600, 2000], 0.12, 0.06, 'sine');
-    } else {
-        osc.start(); osc.stop(t + 0.01); // no-op
-        return;
+        // Perfect 4th intervals, slightly detuned for richness
+        [500, 667, 889, 1185, 1580].forEach((f, i) => {
+            const delay = i * 0.068 + rnd(0.009);
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sine';
+            o.frequency.value = hp(f, 0.02);
+            g.gain.setValueAtTime(0, t + delay);
+            g.gain.linearRampToValueAtTime(0.065, t + delay + 0.018);
+            g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.18);
+            o.connect(g); g.connect(out);
+            o.start(t); o.stop(t + delay + 0.22);
+        });
     }
-    if (!['hit','miss','fire','bomb','gameover'].includes(type)) { osc.start(); osc.stop(t + 0.05); }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
