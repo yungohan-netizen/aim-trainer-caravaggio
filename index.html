@@ -343,14 +343,10 @@
     <div id="comboValue">x1</div>
 </div>
 
-<!-- Custom crosshair -->
+<!-- Dot crosshair -->
 <div id="crosshair">
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <line x1="14" y1="2" x2="14" y2="10" stroke="rgba(0,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
-        <line x1="14" y1="18" x2="14" y2="26" stroke="rgba(0,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
-        <line x1="2" y1="14" x2="10" y2="14" stroke="rgba(0,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
-        <line x1="18" y1="14" x2="26" y2="14" stroke="rgba(0,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
-        <circle cx="14" cy="14" r="1.8" fill="rgba(0,255,255,0.95)"/>
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="5" cy="5" r="3" fill="rgba(0,255,255,0.95)"/>
     </svg>
 </div>
 
@@ -1143,18 +1139,15 @@ function onMouseMove(e) {
     // ── Adaptive crosshair color ─────────────────────────────────────────────
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(targets);
-    const lines = crosshair.querySelectorAll('line');
-    const dot   = crosshair.querySelector('circle');
-    if (hits.length > 0) {
+    const dot = crosshair.querySelector('circle');
+    if (hits.length > 0 && dot) {
         const tp = hits[0].object.userData.type;
         const col = tp === 'bomb'  ? 'rgba(255,60,60,0.95)'
                   : tp === 'heart' ? 'rgba(255,80,180,0.95)'
                   : tp === 'gold'  ? 'rgba(255,210,0,0.95)'
                   : 'rgba(0,255,255,0.9)';
-        lines.forEach(l => l.setAttribute('stroke', col));
         dot.setAttribute('fill', col);
-    } else {
-        lines.forEach(l => l.setAttribute('stroke', 'rgba(0,255,255,0.9)'));
+    } else if (dot) {
         dot.setAttribute('fill', 'rgba(0,255,255,0.95)');
     }
 }
@@ -1274,47 +1267,59 @@ function animate() {
             const t = targets[i];
             const ud = t.userData;
 
-            // Spawn grow-in
+            // Spawn grow-in — move immediately, just scale up
             if (ud.spawnScale < 1) {
                 ud.spawnScale = Math.min(ud.spawnScale + delta * 10, 1);
                 t.scale.setScalar(ud.spawnScale);
             }
 
-            // Movement — realistic FPS player behaviour
+            // Movement — snappy FPS player behaviour
             ud.jukeCooldown = Math.max(0, ud.jukeCooldown - delta);
             ud.nextBehaviourIn -= delta;
 
             if (ud.nextBehaviourIn <= 0) {
                 const r = Math.random();
 
-                if (ud.jukeCooldown <= 0 && r < 0.25) {
-                    // Counter-strafe: snap to near-zero then accelerate opposite
+                if (ud.jukeCooldown <= 0 && r < 0.30) {
+                    // Counter-strafe: instant snap to opposite direction — NO freeze
+                    // Real players counter-strafe by pressing opposite key, velocity drops fast
                     ud.strafeDir *= -1;
-                    ud.tvx = 0; // brief stop before reversing (counter-strafe freeze)
-                    ud.jukeCooldown = 0.4 + Math.random() * 0.3;
-                    ud.nextBehaviourIn = 0.08 + Math.random() * 0.0015; // very short — just the freeze
+                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.8 + Math.random() * 0.2);
+                    ud.tvy = ud.vertBias * ud.maxSpeed * 0.2;
+                    ud.jukeCooldown = 0.25 + Math.random() * 0.2;
+                    ud.nextBehaviourIn = 0.15 + Math.random() * 0.25;
+
                 } else if (r < 0.55) {
-                    // Normal strafe — horizontal dominant, tiny vertical drift
+                    // Hard strafe — full speed horizontal
                     ud.strafeDir = Math.random() < 0.5 ? -1 : 1;
-                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.7 + Math.random() * 0.3);
-                    ud.tvy = ud.vertBias * ud.maxSpeed * 0.25;
-                    ud.nextBehaviourIn = 0.4 + Math.random() * 0.9;
-                } else if (r < 0.75) {
-                    // Diagonal push — strafe + slight vertical
-                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.5 + Math.random() * 0.4);
-                    ud.tvy = (Math.random() - 0.5) * ud.maxSpeed * 0.4;
-                    ud.nextBehaviourIn = 0.3 + Math.random() * 0.6;
+                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.85 + Math.random() * 0.15);
+                    ud.tvy = ud.vertBias * ud.maxSpeed * 0.15;
+                    ud.nextBehaviourIn = 0.25 + Math.random() * 0.45;
+
+                } else if (r < 0.72) {
+                    // Peek: dart toward center then snap back (common in tactical FPS)
+                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.5 + Math.random() * 0.3);
+                    ud.tvy = (Math.random() - 0.5) * ud.maxSpeed * 0.35;
+                    ud.nextBehaviourIn = 0.12 + Math.random() * 0.18;
+
+                } else if (r < 0.88) {
+                    // Diagonal rush
+                    ud.tvx = ud.strafeDir * ud.maxSpeed * (0.6 + Math.random() * 0.35);
+                    ud.tvy = (Math.random() < 0.5 ? 1 : -1) * ud.maxSpeed * (0.25 + Math.random() * 0.2);
+                    ud.nextBehaviourIn = 0.2 + Math.random() * 0.35;
+
                 } else {
-                    // Brief stop / crouch moment — player decelerating
-                    ud.tvx = 0;
+                    // Very brief deceleration (crouch-stop), max 0.1s — never a full stop
+                    ud.tvx = ud.strafeDir * ud.maxSpeed * 0.25;
                     ud.tvy = 0;
-                    ud.nextBehaviourIn = 0.12 + Math.random() * 0.25;
+                    ud.nextBehaviourIn = 0.06 + Math.random() * 0.08;
                 }
             }
 
-            // Accelerate current velocity toward target (simulates player acceleration curve)
-            ud.vx += (ud.tvx - ud.vx) * ud.accel;
-            ud.vy += (ud.tvy - ud.vy) * ud.accel;
+            // High accel: reaches target speed in ~2-3 frames — feels snappy, not floaty
+            const accelRate = 0.35;
+            ud.vx += (ud.tvx - ud.vx) * accelRate;
+            ud.vy += (ud.tvy - ud.vy) * accelRate;
 
             t.position.x += ud.vx;
             t.position.y += ud.vy;
