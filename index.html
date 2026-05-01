@@ -359,11 +359,14 @@
         <div id="hs-board-title">MEILLEURS SCORES</div>
         <div id="hs-board-list"><div class="hs-empty">AUCUN SCORE</div></div>
     </div>
-    <div id="legend" style="font-family:sans-serif;font-size:12px;color:#444;letter-spacing:2px;line-height:2.4;margin-bottom:6px;text-align:left;">
-        <div><span style="color:#888;font-family:Orbitron,sans-serif">NORMAL</span> &nbsp;— tirer, score +points</div>
-        <div><span style="color:#ffcc00;font-family:Orbitron,sans-serif">OR</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— petite, rapide, ×3 score</div>
-        <div><span style="color:#ff3333;font-family:Orbitron,sans-serif">BOMBE</span> &nbsp;— ne pas tirer, +pts si ignorée</div>
-        <div><span style="color:#ff44aa;font-family:Orbitron,sans-serif">COEUR</span> &nbsp;— tirer, +1 vie</div>
+    <div id="legend" style="font-family:sans-serif;font-size:11px;color:#333;letter-spacing:2px;line-height:1;margin-bottom:6px;text-align:left;border:1px solid #181818;padding:12px 18px;border-radius:4px;background:rgba(255,255,255,0.02);">
+        <div style="color:#222;letter-spacing:4px;margin-bottom:10px;font-size:10px;">CIBLES QUI APPARAISSENT</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+            <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#888;flex-shrink:0"></span><span><span style="color:#666">COULEURS</span> — TIRER</span></div>
+            <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffcc00;flex-shrink:0"></span><span><span style="color:#554400">OR</span> — RAPIDE, ×3 points</span></div>
+            <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ff3333;flex-shrink:0"></span><span><span style="color:#550000">BOMBE</span> — NE PAS TIRER, disparaît</span></div>
+            <div style="display:flex;align-items:center;gap:10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff44aa;flex-shrink:0"></span><span><span style="color:#551133">COEUR</span> — +1 VIE</span></div>
+        </div>
     </div>
     <div id="sens-panel">
         <label>SENSIBILITE</label>
@@ -824,12 +827,28 @@ function spawnTarget() {
     }
 
     const mat = new THREE.MeshStandardMaterial({
-        color, roughness: 0.12, metalness: 0.1,
+        color, roughness: type === 'gold' ? 0.04 : 0.12,
+        metalness: type === 'gold' ? 0.95 : 0.1,
         emissive: color,
-        emissiveIntensity: type === 'bomb' ? 0.8 : 0.55,
+        emissiveIntensity: type === 'bomb' ? 0.8 : type === 'gold' ? 1.8 : 0.55,
         flatShading: true
     });
     const mesh = new THREE.Mesh(geo, mat);
+
+    // Gold gets a point light child for environmental glow
+    if (type === 'gold') {
+        const pt = new THREE.PointLight(0xffcc00, 2.5, 8);
+        mesh.add(pt);
+        mesh.userData.pointLight = pt;
+    }
+
+    // Size variation — same geo, different visual scale (0.65× to 1.35×)
+    const sizeVar = type === 'gold' ? (0.7 + Math.random() * 0.5)
+                  : type === 'bomb' ? (0.85 + Math.random() * 0.3)
+                  : (0.55 + Math.random() * 0.9);
+
+    // Depth variation — closer targets feel faster, farther feel smaller
+    const depthVar = -15 - Math.random() * 8;
 
     // Minimum distance from existing targets
     const MIN_DIST = 2.0;
@@ -842,7 +861,7 @@ function spawnTarget() {
         attempts < 8 &&
         targets.some(t => t.position.distanceTo(mesh.position) < MIN_DIST)
     );
-    mesh.position.z = -18;
+    mesh.position.z = depthVar;
 
     // Velocity
     const baseSpeed = 0.02 + level * 0.008;
@@ -853,27 +872,29 @@ function spawnTarget() {
     const maxSpd = (0.022 + level * 0.007) * speedMult;
     const initialDir = Math.random() < 0.5 ? -1 : 1;
 
-    // ── BLOC USERDATA CORRIGÉ ET PROPRE ──
     mesh.userData = {
         type, radius,
         shrinkRate: (0.0008 + level * 0.00025) * shrinkMult,
         birthTime: clock.elapsedTime,
         baseColor: color.clone(),
         spawnScale: 0.0,
+        sizeVar,
 
-        // On donne une vitesse de base instantanée pour qu'elle bouge dès le pop
-        vx: initialDir * maxSpd, 
+        vx: initialDir * maxSpd,
         vy: (Math.random() - 0.5) * maxSpd * 0.4,
-        tvx: initialDir * maxSpd, 
+        tvx: initialDir * maxSpd,
         tvy: (Math.random() - 0.5) * maxSpd * 0.4,
         maxSpeed: maxSpd,
-        
+
         nextBehaviourIn: 0.4 + Math.random() * 0.8,
         behaviour: 'strafe-right',
         strafeDir: initialDir,
         vertBias: (Math.random() - 0.5) * 0.3,
-        accel: 1.0 + Math.random() * 0.8, // Accélération forte pour un départ sec
-        jukeCooldown: 0
+        jukeCooldown: 0,
+
+        // Jump/crouch
+        jumpVy: 0,         // current vertical impulse
+        jumpCooldown: 0,   // time before next jump/crouch
     };
 
     scene.add(mesh);
@@ -1153,13 +1174,13 @@ function onMouseMove(e) {
 }
 
 function buildEnvironment() {
-    // ── Neon grid floor ──
-    const gridHelper = new THREE.GridHelper(300, 80, 0x001a1a, 0x0d2d2d);
+    // ── Dark grey grid floor ──
+    const gridHelper = new THREE.GridHelper(300, 80, 0x1c1c1c, 0x141414);
     gridHelper.position.y = 0.01;
     scene.add(gridHelper);
 
-    // ── Second brighter grid at closer scale ──
-    const innerGrid = new THREE.GridHelper(40, 20, 0x004444, 0x002222);
+    // ── Second tighter grid ──
+    const innerGrid = new THREE.GridHelper(40, 20, 0x222222, 0x1a1a1a);
     innerGrid.position.y = 0.02;
     scene.add(innerGrid);
 
@@ -1176,7 +1197,7 @@ function buildEnvironment() {
     scene.add(new THREE.Mesh(horizGeo, new THREE.MeshStandardMaterial({ color: 0x080808, flatShading: true, roughness: 1 })));
 
     // ── Ambient floating debris ──
-    const debrisMat = new THREE.MeshBasicMaterial({ color: 0x002222, wireframe: true });
+    const debrisMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, wireframe: true });
     for (let i = 0; i < 18; i++) {
         const g = new THREE.OctahedronGeometry(0.25 + Math.random() * 0.5, 0);
         const m = new THREE.Mesh(g, debrisMat);
@@ -1270,7 +1291,29 @@ function animate() {
             // Spawn grow-in — move immediately, just scale up
             if (ud.spawnScale < 1) {
                 ud.spawnScale = Math.min(ud.spawnScale + delta * 10, 1);
-                t.scale.setScalar(ud.spawnScale);
+                t.scale.setScalar(ud.spawnScale * ud.sizeVar);
+            }
+
+            // ── Jump / crouch impulse system ─────────────────────────────────
+            ud.jumpCooldown = Math.max(0, ud.jumpCooldown - delta);
+            if (ud.jumpCooldown <= 0 && ud.spawnScale >= 1) {
+                const jr = Math.random();
+                // jump: 12% chance, crouch: 8% chance
+                if (jr < 0.12) {
+                    ud.jumpVy = ud.maxSpeed * (1.8 + Math.random() * 1.2); // upward burst
+                    ud.jumpCooldown = 0.8 + Math.random() * 1.2;
+                } else if (jr < 0.20) {
+                    ud.jumpVy = -ud.maxSpeed * (1.0 + Math.random() * 0.8); // crouch dip
+                    ud.jumpCooldown = 0.5 + Math.random() * 0.8;
+                } else {
+                    ud.jumpCooldown = 0.3 + Math.random() * 0.5; // no action, wait
+                }
+            }
+            // Apply jump/crouch impulse with gravity-like decay
+            if (Math.abs(ud.jumpVy) > 0.0001) {
+                ud.vy += ud.jumpVy * delta * 6;
+                ud.jumpVy *= Math.pow(0.12, delta); // fast decay
+                if (Math.abs(ud.jumpVy) < 0.001) ud.jumpVy = 0;
             }
 
             // Movement — snappy FPS player behaviour
@@ -1343,16 +1386,19 @@ function animate() {
             t.rotation.x += rs; t.rotation.y += rs * 0.65;
 
             // Emissive pulse
+            const goldPulse = 1.5 + 0.5 * Math.abs(Math.sin(elapsed * 4 + ud.birthTime));
             t.material.emissiveIntensity = ud.type === 'bomb'
                 ? 0.5 + 0.6 * Math.abs(Math.sin(elapsed * 9 + ud.birthTime))
                 : ud.type === 'gold'
-                ? 0.6 + 0.4 * Math.abs(Math.sin(elapsed * 6 + ud.birthTime))
+                ? goldPulse
                 : 0.4 + 0.25 * Math.sin(elapsed * 2.5 + ud.birthTime);
+            if (ud.pointLight) ud.pointLight.intensity = goldPulse * 1.8;
 
             // Shrink
             let newScale = t.scale.x;
             if (ud.spawnScale >= 1) {
-                newScale = t.scale.x - ud.shrinkRate;
+                const shrunk = (t.scale.x / ud.sizeVar) - ud.shrinkRate;
+                newScale = shrunk * ud.sizeVar;
                 t.scale.setScalar(newScale);
             }
 
